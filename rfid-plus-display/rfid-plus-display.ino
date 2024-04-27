@@ -8,22 +8,17 @@
 #define LCD_RST 12
 #define LCD_EN 11
 #define LCD_RW 10
-#define LCD_D0 18
-#define LCD_D1 19
-#define LCD_D2 20
-#define LCD_D3 21
 #define LCD_D4 9
 #define LCD_D5 8
 #define LCD_D6 7
 #define LCD_D7 6
 
 
-// Initialize the LCD library and set it to operate using 11 GPIO pins under
-// the 8-bit mode. The hardware configuration allows the 8-bit mode but
-// the 4-bit mode under the various configurations is can be used.
+// Initialize the LCD library and set it to operate using 7 GPIO pins under
+// the 4-bit mode.
 LiquidCrystal lcd(
   LCD_RST, LCD_RW, LCD_EN, // Control Pins
-  LCD_D0, LCD_D1, LCD_D2, LCD_D3, LCD_D4, LCD_D5, LCD_D6, LCD_D7 // 8-bit I2C pins
+  LCD_D4, LCD_D5, LCD_D6, LCD_D7 // 4-bit UART data pins
 );
 
 void setup() {
@@ -33,7 +28,7 @@ void setup() {
    // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
   // Print a message to the LCD.
-  lcd.print("Hello, Warszawie!");
+  lcd.print("Hello, Warszawa!");
 }
 
 void loop() {
