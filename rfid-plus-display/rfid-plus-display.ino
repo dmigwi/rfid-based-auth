@@ -3,7 +3,6 @@
 #include "Arduino.h"
 #include <LiquidCrystal.h>
 
-
 // LCD Pins Configuration
 #define LCD_RST 12
 #define LCD_EN 11
@@ -39,20 +38,24 @@ void loop() {
   lcd.print(millis() / 1000);
 
 
-  // A serial passthrough is necessary because leonardo board doesn't have
-  // a chip dedicated to managing the serial communication via UART protocol.
-  // Copy from virtual serial line to uart and vice versa
-  if (Serial.available()) {
-    while(Serial.available()){
-      Serial1.write(Serial.read());
+  // SerialPassthrough code is only run when needed.
+  // https://docs.arduino.cc/built-in-examples/communication/SerialPassthrough/
+  #ifdef ARDUINO_AVR_LEONARDO
+    // A serial passthrough is necessary because leonardo board doesn't have
+    // a chip dedicated to managing the serial communication via UART protocol.
+    // Copy from virtual serial line to uart and vice versa
+    if (Serial.available()) {
+      while(Serial.available()){
+        Serial1.write(Serial.read());
+      }
     }
-  }
 
-  if (Serial1.available()) {
-    while(Serial1.available()) {
-      Serial.write(Serial1.read());
+    if (Serial1.available()) {
+      while(Serial1.available()) {
+        Serial.write(Serial1.read());
+      }
     }
-  }
+  #endif
 }
 
 
