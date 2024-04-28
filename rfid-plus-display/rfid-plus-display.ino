@@ -12,6 +12,7 @@
 #define LCD_D6 7
 #define LCD_D7 6
 
+const int SERIAL_BAUD_RATE = 115200;
 
 // Initialize the LCD library and set it to operate using 7 GPIO pins under
 // the 4-bit mode.
@@ -21,10 +22,10 @@ LiquidCrystal lcd(
 );
 
 void setup() {
-  Serial.begin(115200);
-  Serial1.begin(115200);
+  Serial.begin(SERIAL_BAUD_RATE);
+  Serial1.begin(SERIAL_BAUD_RATE);
 
-   // set up the LCD's number of columns and rows:
+  // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
   // Print a message to the LCD.
   lcd.print("Hello, Warszawa!");
