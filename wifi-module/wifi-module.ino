@@ -2,7 +2,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
-#include <StreamString.h>
 
 // The text of builtin files are in this header file
 #include "builtinfiles.h"
@@ -18,20 +17,16 @@
 #define BUILTIN_LED 2
 
 // uncomment next line to get debug messages output to Serial link
-#define DEBUG
-// Trace output simplified, can be deactivated here
-#define Trace(...) #ifdef DEBUG; Serial.print(__VA_ARGS__); #endif;
-// Traceln output simplified, can be deactivated here
-#define Traceln(...) #ifdef DEBUG; Serial.println(__VA_ARGS__); #endif;
+// #define DEBUG
 
 // When setting up the AP mode is used to set the Station WiFi settings the
 // following configuration is used:
-const string AP_SSID = "RFID-based-Auth";
-const string AP_Password = "Adm1n$tr8oR";
+const String AP_SSID = "RFID-based-Auth";
+const String AP_Password = "Adm1n$tr8oR";
 
 // multicast DNS is used to attach '.local' suffix to create the complete domain name
 // (http://rfid.auth.local). This url is mapped to the server running in the AP network.
-const string AP_Server_Domain = "rfid.auth";
+const String AP_Server_Domain = "rfid.auth";
 
 const int SERIAL_BAUD_RATE = 115200;
 const int MAX_SSID_LEN = 32; // Max of 32 characters allowed.
@@ -51,7 +46,7 @@ struct WifiConfigSettings{
   char Password[MAX_PASSWORD_LEN];
 };
 
-WifiConfigSettings settings;
+WifiConfigSettings settings = WifiConfigSettings();
 
 // Server indicates the created server interface
 ESP8266WebServer server(80);
@@ -68,21 +63,22 @@ void setup() {
     delay(1000);
   }
 
-  Traceln(F("Booting the WIFI Module"));
+  Serial.println(F("Booting the WIFI Module"));
 
   // Read the preset Station WIFI Settings from EEPROM.
-  EEPROM.get(STORAGE_ADDRESS, &settings);
+  EEPROM.get(STORAGE_ADDRESS, settings);
+  String ssid = String(settings.SSID);
+  String password = String(settings.Password);
 
-  string ssid = string(settings.SSID);
-  string password = string(settings.Password);
-
-  Traceln(F("Attempting a connection to AP"));
-  Trace(F("SSID :'"));
-  Trace(F(ssid));
-  Traceln("'");
-  Trace(F("Password :'"));
-  Trace(F(password));
-  Traceln("'");
+  #ifdef DEBUG
+  Serial.println(F("Attempting a connection to AP"));
+  Serial.print(F("SSID :'"));
+  Serial.print(ssid);
+  Serial.println(F("'"));
+  Serial.print(F("Password :'"));
+  Serial.print(password);
+  Serial.println(F("'"));
+  #endif
 
   // The device by default it runs on Station mode. AP mode only used to update
   // station mode WIFI Settings.
@@ -103,11 +99,14 @@ void setup() {
     }
   }
 
-  Traceln("Station WiFi Mode Active");
+  #ifdef DEBUG
+  Serial.println("Station WiFi Mode Active");
+  #endif
+
   // blink 5 times to indicate that WiFi connectivity is working as expected.
   for (int i=0;i<5;i++) {
     digitalWrite(BUILTIN_LED, LOW);
-    delay(1000)
+    delay(1000);
     digitalWrite(BUILTIN_LED, HIGH);
   }
 }
@@ -132,15 +131,17 @@ bool isWiFiConnection() {
     Serial.print(".");
   }
 
+  #ifdef DEBUG
   if (WiFi.isConnected()) {
-    Traceln(F("Connecting to AP was Successful"));
-    Trace(F("IP Address :'"));
-    Traceln(F(WiFi.localIP()));
-  }else {
-    Traceln(F("Connecting to Wifi AP Failed!"));
-    Trace(F("Error Msg :'"));
-    Traceln(F(getWiFiStatusMsg()));
+    Serial.println(F("Connecting to AP was Successful"));
+    Serial.print(F("IP Address :'"));
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println(F("Connecting to Wifi AP Failed!"));
+    Serial.print(F("Error Msg :'"));
+    Serial.println(getWiFiStatusMsg());
   }
+  #endif
   
   return WiFi.isConnected();
 }
@@ -151,20 +152,25 @@ bool isWiFiConnection() {
 */
 void setUpConfigAP() {
   WiFi.mode(WIFI_AP);
-  isSet = WiFi.softAP(AP_SSID, AP_Password);
+  bool isSet = WiFi.softAP(AP_SSID, AP_Password);
 
-  Trace(F("Initializing soft-AP ... "));
-  Traceln(isSet ? "Ready" : "Failed!");
+  #ifdef DEBUG
+  Serial.print(F("Initializing soft-AP ... "));
+  Serial.println(isSet ? "Ready" : "Failed!");
   
-  Trace(F("AP SSID :'"));
-  Traceln(F(AP_SSID));
-  Trace(F("AP Password :'"));
-  Traceln(F(AP_Password));
-  Trace(F("Server IP Address :'"));
-  Traceln(F(WiFi.softAPIP()));
+  Serial.print(F("AP SSID :'"));
+  Serial.println(AP_SSID);
+  Serial.print(F("AP Password :'"));
+  Serial.println(AP_Password);
+  Serial.print(F("Server IP Address :'"));
+  Serial.println(WiFi.softAPIP());
+  #endif
 
-  if (MDNS.begin(AP_Server_Domain)) { 
-    Traceln("MDNS responder started \n");
+  isSet  = MDNS.begin(AP_Server_Domain);
+  if (isSet) { 
+    #ifdef DEBUG
+    Serial.println("MDNS responder started");
+    #endif
   }
 
   server.on("/", HTTP_GET, handleRoot);
@@ -182,32 +188,45 @@ void setUpConfigAP() {
   server.enableETag(true);
 
   server.begin();
-  Traceln("HTTP server started");
+  #ifdef DEBUG
+  Serial.println("HTTP server started");
+  #endif
 }
 
 /*
   getWiFiStatusMsg provides a descriptive status message in relation to the wifi
   connection attempts.
 */
-string getWiFiStatusMsg() {
+String getWiFiStatusMsg() {
+  String status = "Enable Debug Status!";
+  #ifdef DEBUG
   switch (WiFi.status()) {
-    cases WL_IDLE_STATUS:
-      return "Wi-Fi is in process of changing between statuses";
-    cases WL_NO_SSID_AVAIL:
-      return "Configured SSID cannot be reached";
-    cases WL_SCAN_COMPLETED
-      return "Scan Completed";
-    cases WL_CONNECT_FAILED:
-      return "connection failed");
-    cases WL_CONNECTION_LOST:
-      return "Connection lost";
-    cases WL_WRONG_PASSWORD:
-      return "Wrong password";
-    cases WL_DISCONNECTED:
-      return "WiFi disconnected";
+    case WL_IDLE_STATUS:
+      status = "Wi-Fi is in process of changing between statuses";
+      break;
+    case WL_NO_SSID_AVAIL:
+      status = "Configured SSID cannot be reached";
+      break;
+    case WL_SCAN_COMPLETED:
+      status = "Scan Completed";
+      break;
+    case WL_CONNECT_FAILED:
+      status = "connection failed";
+      break;
+    case WL_CONNECTION_LOST:
+      status = "Connection lost";
+      break;
+    case WL_WRONG_PASSWORD:
+      status = "Wrong password";
+      break;
+    case WL_DISCONNECTED:
+      status = "WiFi disconnected";
+      break;
     default:
-      return "Connection Successful";
+      status = "Connection Successful";
     }
+    #endif
+    return status;
 }
 
 // Server Pages
@@ -216,11 +235,10 @@ string getWiFiStatusMsg() {
   handleRoot returns the webpage to be viewed when a GET request is made to (http://rfid.auth.local).
 */
 void handleRoot() {
-  StreamString temp;
-  temp.reserve(500);  // Preallocate a large chunk to avoid memory fragmentation
-  temp.printf(FPSTR(rootContent), string(settings.SSID), MAX_SSID_LEN, MAX_SSID_LEN,
-          string(settings.Password), MAX_PASSWORD_LEN, MAX_PASSWORD_LEN);
-  server.send(200, "text/html", temp.c_str());
+  char buffer[1500];  // Preallocate a large chunk to avoid memory fragmentation
+  sprintf(buffer, rootContent, settings.SSID, MAX_SSID_LEN, MAX_SSID_LEN,
+          settings.Password, MAX_PASSWORD_LEN, MAX_PASSWORD_LEN);
+  server.send(200, "text/html", buffer);
 }
 
 /*
@@ -230,12 +248,16 @@ void handleRoot() {
 void handleShutdown() {
   server.send(404, "text/html", FPSTR(exitConfigModeContent));
 
-  Traceln(F("Shutting the server!"));
+  #ifdef DEBUG
+  Serial.println(F("Shutting the server!"));
+  #endif
   server.stop();
 
-  delay(500); // Wait for the server to completely shutdown.
+  delay(1500); // Wait for the server to completely shutdown.
 
-  Traceln(F("Restarting the ESP-01 chip CPU"));
+  #ifdef DEBUG
+  Serial.println(F("Restarting the ESP-01 chip CPU"));
+  #endif
   ESP.restart();
 }
 
@@ -245,28 +267,29 @@ void handleShutdown() {
   or password are found to be empty, the update will fail.
 */
 void handleUpdateSettings() {
-  // updateFailedEmphasis string is included in the update status webpage to indicate
+  // updateStatus string is included in the update status webpage to indicate
   // update failure if it happened.
-  string updateFailedEmphasis = "NOT";
+  char updateStatus[] = "NOT";
 
   if (server.hasArg("ssid") && server.hasArg("pwd")) {
-    string ssid = server.arg("ssid").trim();
-    string pwd = server.arg("pwd").trim();
+    String ssid = server.arg("ssid");
+    String pwd = server.arg("pwd");
+    ssid.trim(); // Remove trailing and preceding whitespace characters.
+    pwd.trim(); // Remove trailing and preceding whitespace characters.
   
     if (ssid.length() > 0 && pwd.length() > 0) {
       ssid.toCharArray(settings.SSID, ssid.length()); // set the ssid string to the struct.
-      pwd.toCharArray(settings.Password, pwd.length()) // set the pwd string to the struct.
+      pwd.toCharArray(settings.Password, pwd.length()); // set the pwd string to the struct.
 
       // Update the EEPROM with the latest settings.
-      EEPROM.put(STORAGE_ADDRESS, &settings);
+      EEPROM.put(STORAGE_ADDRESS, settings);
 
       // Remove the failure emphasis text indicating success of the update operation.
-      updateFailedEmphasis = ""; // its as 
+      updateStatus[0] = '\0'; // Clearing the char array.
     }
   }
 
-  StreamString temp;
-  temp.reserve(500);  // Preallocate a large chunk to avoid memory fragmentation
-  temp.printf(FPSTR(updateSuccessfulContent), updateFailedEmphasis, string(settings.SSID), string(settings.Password));
-  server.send(200, "text/html", temp.c_str());
+  char buffer[1000];  // Preallocate a large chunk to avoid memory fragmentation
+  sprintf(buffer, updateSuccessfulContent, updateStatus, settings.SSID, settings.Password);
+  server.send(200, "text/html", buffer);
 }
