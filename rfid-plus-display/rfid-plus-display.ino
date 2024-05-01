@@ -12,7 +12,7 @@
 #define LCD_D6 7
 #define LCD_D7 6
 
-const int SERIAL_BAUD_RATE = 115200;
+#define SERIAL_BAUD_RATE 115200
 
 // Initialize the LCD library and set it to operate using 7 GPIO pins under
 // the 4-bit mode.

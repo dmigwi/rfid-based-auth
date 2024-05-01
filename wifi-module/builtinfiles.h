@@ -8,11 +8,15 @@
 #ifndef BUILTIN_FILES_
 #define BUILTIN_FILES_
 
-// rootContent defines content for the route http://rfid.auth.local/
+// rootContent defines content for the route http://rfid_auth.local/
 static const char rootContent[] PROGMEM = R"==(
     <!DOCTYPE html>
     <html lang="en-GB">
-    <head><title>WiFi Configuration</title></head>
+    <head>
+    <title>WiFi Configuration</title>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
     <body>
         <p style="font-weight: bold;">RFID-based Auth Configuration.</p>
         <span>Use this form to configure esp8266 WiFi settings for use in the Station(STA) Mode.</span><br>
@@ -36,6 +40,8 @@ static const char notFoundContent[] PROGMEM = R"==(
     <!DOCTYPE html>
     <html lang="en-GB">
     <head>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Not found</title>
     </head>
     <body>
@@ -47,12 +53,14 @@ static const char notFoundContent[] PROGMEM = R"==(
     </html>
     )==";
 
-// updateSuccessfulContent defines content for the route http://rfid.auth.local/update
+// updateSuccessfulContent defines content for the route http://rfid_auth.local/update
 static const char updateSuccessfulContent[] PROGMEM = R"==(
     <!DOCTYPE html>
     <html lang="en-GB">
     <head>
     <title>Update Successful</title>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
     <body>
     <h4>The WiFi Configuration Update Was <span style="color:red;">%s</span> Successful!!! :)</h4>
@@ -61,16 +69,17 @@ static const char updateSuccessfulContent[] PROGMEM = R"==(
     <p><i>WiFi Password (WEP/WPA/WPA2):</i> "<strong>%s</strong>"</p>
     <p><a href="/">Reset the WiFi configuration!</a></p>
     or
-    <p><a href="/quit">Quit and Restart WiFi module!</a></p>
+    <p><a href="/quit">Save and Restart WiFi module!</a></p>
     </body>
     )==";
 
-// exitConfigModeContent defines content for the route http://rfid.auth.local/quit
+// exitConfigModeContent defines content for the route http://rfid_auth.local/quit
 static const char exitConfigModeContent[] PROGMEM = R"==(
     <!DOCTYPE html>
     <html lang="en-GB">
     <head>
     <title>Bye Bye</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
     <body>
     <h1>Bye! :)</h1>
