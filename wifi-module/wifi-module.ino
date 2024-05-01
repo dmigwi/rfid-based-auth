@@ -40,9 +40,9 @@ const String SERVER_API_URL = "http://dmigwi.atwebpages.com/auth/time.php";
 const byte MAX_SSID_LEN = 32; // A max of 32 characters allowed.
 const byte MAX_PASS_LEN = 64; // A max of 64 characters allowed.
 
-// Delay Timeout is set to 30 sec after which, the network connection
+// Delay Timeout is set to 1 minute after which, the network connection
 // attempts are aborted.
-const int CONNECTION_TIMEOUT = 30000;
+const int CONNECTION_TIMEOUT = 60000;
 
 // STORAGE_ADDRESS defines the location where wifi setting will be stored in the
 // EEPROM storage.
@@ -190,8 +190,13 @@ bool isWiFiConnection() {
   // Wait for connection success status only till connection timeout.
   while (WiFi.status() != WL_CONNECTED && millis() <= CONNECTION_TIMEOUT) {
     digitalWrite(LED_BUILTIN, (digitalRead(LED_BUILTIN)==HIGH) ? LOW : HIGH);
-    delay(1000);
+    delay(2000);
+    #ifdef DEBUG
+    Serial.print(F("\t. Error: "));
+    Serial.println(getWiFiStatusMsg());
+    #else
     Serial.print(".");
+    #endif
   }
 
   digitalWrite(LED_BUILTIN, HIGH);
