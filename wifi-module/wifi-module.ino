@@ -136,11 +136,11 @@ void setup() {
 // the loop function runs over and over again forever
 void loop() {
   // Switch off builtin status light.
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, HIGH);
   // The WiFi connection is active and serial data has been received 
   if (WiFi.status() == WL_CONNECTED && Serial.available()) {
     // Switch on builtin status light to indicate API connection activity.
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_BUILTIN, LOW);
 
     WiFiClient client;
     HTTPClient http;
