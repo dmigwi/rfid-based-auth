@@ -142,11 +142,20 @@ void loop() {
     // Switch on builtin status light to indicate API connection activity.
     digitalWrite(LED_BUILTIN, LOW);
 
+    // Read the contents of the serial buffer.
+    size_t bufferSize = Serial.available();
+    char buffer[bufferSize];
+    byte counter = 0;
+    while (Serial.available()) {
+      buffer[counter] = Serial.read();
+      counter++;
+    }
+
     WiFiClient client;
     HTTPClient http;
 
     #ifdef DEBUG 
-    Serial.println("[HTTP] begin...");
+    Serial.println("[HTTP] Setting the client config");
     #endif
 
     // configure traged server and url
@@ -154,10 +163,10 @@ void loop() {
     http.addHeader("Content-Type", "application/json");
 
     #ifdef DEBUG 
-    Serial.println("[HTTP] POST...");
+    Serial.println("[HTTP] Make a POST Request");
     #endif
     // start connection and send HTTP header and body
-    int httpCode = http.POST("{\"hello\":\"world\"}");
+    int httpCode = http.POST(String(buffer));
 
     // httpCode will be negative on error
     if (httpCode > 0) {
@@ -232,9 +241,11 @@ void setUpConfigAP() {
   Serial.print(F("AP SSID :'"));
   Serial.println(AP_SSID);
   Serial.print(F("AP Password :'"));
-  Serial.println(AP_Password);
+  Serial.print(AP_Password);
+  Serial.println(F("'"));
   Serial.print(F("Server IP Address :'"));
-  Serial.println(WiFi.softAPIP());
+  Serial.print(WiFi.softAPIP());
+  Serial.println(F("'"));
   #endif
 
   isSet  = MDNS.begin(AP_Server_Domain);
