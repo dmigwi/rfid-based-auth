@@ -40,9 +40,9 @@ const char* SERVER_API_URL = "http://dmigwi.atwebpages.com/auth/time.php";
 const byte MAX_SSID_LEN = 32; // A max of 32 characters allowed.
 const byte MAX_PASS_LEN = 64; // A max of 64 characters allowed.
 
-// Delay Timeout is set to 1 minute after which, the network connection
+// Delay Timeout is set to 1min and 30sec after which, the network connection.
 // attempts are aborted.
-const int CONNECTION_TIMEOUT = 60000;
+const int CONNECTION_TIMEOUT = 90000;
 
 // STORAGE_ADDRESS defines the location where wifi setting will be stored in the
 // EEPROM storage.
@@ -70,6 +70,7 @@ void setup() {
 
   // Delay allows the serial interface to be ready.
   for (int i=0;i<5;i++) {
+    // Toggle ON and OFF LED state.
     digitalWrite(LED_BUILTIN, (digitalRead(LED_BUILTIN)==HIGH) ? LOW : HIGH);
     Serial.print(".");
     delay(1000);
@@ -128,6 +129,7 @@ void setup() {
 
   // blink 5 times to indicate that WiFi connectivity is working as expected.
   for (int i=0;i<5;i++) {
+    // Toggle ON and OFF LED state.
     digitalWrite(LED_BUILTIN, (digitalRead(LED_BUILTIN)==HIGH) ? LOW : HIGH);
     delay(1000);
   }
@@ -198,14 +200,10 @@ void loop() {
 bool isWiFiConnection() {
   // Wait for connection success status only till connection timeout.
   while (WiFi.status() != WL_CONNECTED && millis() <= CONNECTION_TIMEOUT) {
+    // Toggle ON and OFF LED state.
     digitalWrite(LED_BUILTIN, (digitalRead(LED_BUILTIN)==HIGH) ? LOW : HIGH);
-    delay(2000);
-    #ifdef DEBUG
-    Serial.print(F("\t. Error: "));
-    Serial.println(getWiFiStatusMsg());
-    #else
     Serial.print(".");
-    #endif
+    delay(1000);
   }
 
   digitalWrite(LED_BUILTIN, HIGH);
@@ -239,7 +237,8 @@ void setUpConfigAP() {
   Serial.println(isSet ? "Ready" : "Failed!");
   
   Serial.print(F("AP SSID :'"));
-  Serial.println(AP_SSID);
+  Serial.print(AP_SSID);
+  Serial.println(F("'"));
   Serial.print(F("AP Password :'"));
   Serial.print(AP_Password);
   Serial.println(F("'"));

@@ -28,6 +28,7 @@ static const char rootContent[] PROGMEM = R"==(
             <p>PWD :<input type="text" placeholder="Password" name="pwd" value="%s" maxlength="%d" required/>
                 <i>Max characters allowed (%d).</i> Password for WEP/WPA/WPA2.
             </p>
+            <input type="reset" value="Reset"/>
             <input type="submit" value="Configure"/>
         </form>
         <p><a href="/quit">Quit and Restart WiFi module!</a></p>
