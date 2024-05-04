@@ -19,8 +19,8 @@ static const char rootContent[] PROGMEM = R"==(
     </head>
     <body>
         <p style="font-weight: bold;">RFID-based Auth Configuration.</p>
-        <span>Use this form to configure esp8266 WiFi settings for use in the Station(STA) Mode.</span><br>
-        <i>Leading and trailing whitespace characters are trimmed!</i>
+        <span>Use this form to configure esp8266 WiFi settings for use in the Station (STA) Mode.</span><br>
+        <i>Leading and trailing whitespace characters will be trimmed!</i>
         <form method="POST" action="update">
             <p>SSID :<input type="text" placeholder="Network Name" name="ssid" value="%s" maxlength="%d" required/>
                 <i>Max characters allowed (%d).</i>
@@ -64,7 +64,7 @@ static const char updateSuccessfulContent[] PROGMEM = R"==(
     </head>
     <body>
     <h4>The WiFi Configuration Update Was <span style="color:red;">%s</span> Successful!!! :)</h4>
-    <i>Current WiFi Settings for Use in the Station (STA) Mode</i>
+    <i>Current WiFi Settings for use in the Station (STA) mode:</i>
     <p><i>WiFi Access Point Name (SSID):</i> "<strong>%s</strong>"</p>
     <p><i>WiFi Password (WEP/WPA/WPA2):</i> "<strong>%s</strong>"</p>
     <p><a href="/">Reset the WiFi configuration!</a></p>
@@ -83,7 +83,7 @@ static const char exitConfigModeContent[] PROGMEM = R"==(
     </head>
     <body>
     <h1>Bye! :)</h1>
-    <em>WiFi Module is restarting, therefore exiting this settings configuration mode!</em>
+    <em>WiFi module is restarting and exiting this settings configuration mode!</em>
     </body>
     </html>
     )==";

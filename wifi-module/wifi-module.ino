@@ -27,15 +27,15 @@
 
 // When setting up the AP mode is used to set the Station WiFi settings the
 // following configuration is used:
-const String AP_SSID = "RFID-based-Auth";
-const String AP_Password = "Adm1n$tr8oR";
+const char* AP_SSID = "RFID-based-Auth";
+const char* AP_Password = "Adm1n$tr8oR";
 
 // multicast DNS is used to attach '.local' suffix to create the complete domain name
 // (http://rfid_auth.local). This url is mapped to the server running in the AP network.
-const String AP_Server_Domain = "rfid_auth";
+const char* AP_Server_Domain = "rfid_auth";
 
 // SERVER_API_URL defines the URL to which the HTTP client will make API calls to.
-const String SERVER_API_URL = "http://dmigwi.atwebpages.com/auth/time.php";
+const char* SERVER_API_URL = "http://dmigwi.atwebpages.com/auth/time.php";
 
 const byte MAX_SSID_LEN = 32; // A max of 32 characters allowed.
 const byte MAX_PASS_LEN = 64; // A max of 64 characters allowed.
@@ -284,10 +284,10 @@ String getWiFiStatusMsg() {
   #ifdef DEBUG
   switch (WiFi.status()) {
     case WL_IDLE_STATUS:
-      status = "Wi-Fi is in process of changing between statuses";
+      status = "Wi-Fi in between statuses";
       break;
     case WL_NO_SSID_AVAIL:
-      status = "Configured SSID cannot be reached";
+      status = "SSID cannot be reached";
       break;
     case WL_SCAN_COMPLETED:
       status = "Scan Completed";
@@ -422,5 +422,3 @@ String replaceEmptyBytes(char* rawStr, byte charCount){
   val.trim(); // Remove preceeding and trailing white spaces.
   return val;
 }
-
-
