@@ -108,15 +108,19 @@ void setup() {
   Serial.print(F("Password :'"));
   Serial.print(password);
   Serial.println(F("'"));
+  Serial.print(F("Hostname :'"));
+  Serial.print(WiFi.hostname());
+  Serial.println(F("'"));
   #endif
 
   // The device by default it runs on Station mode. AP mode only used to update
   // station mode WIFI Settings.
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  // By default the WiFi modules activated the power saving mode with results random
-  // wifi disconnects. Disabling it allows consistent WiFi connectivity.
-  WiFi.setSleepMode(WIFI_NONE_SLEEP); // Disable the power saving sleep mode.
+  // Automatic Light Sleep at DTIM listen interval of 3 allows the WiFi module
+  // to easily establish and maintain connections.
+  // https://github.com/esp8266/Arduino/blob/685f2c97ff4b3c76b437a43be86d1dfdf6cb33e3/libraries/ESP8266WiFi/src/ESP8266WiFiGeneric.cpp#L281-L305
+  WiFi.setSleepMode(WIFI_LIGHT_SLEEP, 3);
 
   if (!isWiFiConnection()) {
     // Wifi connection via Station mode failed. Set the WiFi mode to AP and attempt
