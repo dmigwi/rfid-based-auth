@@ -29,6 +29,9 @@
 // following configuration is used:
 const char* AP_SSID = "RFID-based-Auth";
 const char* AP_Password = "Adm1n$tr8oR";
+// WiFi_Hostname defines part of the WiFi hostname. The full name with "RFID_AUTH_24xMac"
+// where "24xMac" represents the last 24 bits of the mac address.
+const char* WiFi_Hostname = "RFID_AUTH";
 
 // multicast DNS is used to attach '.local' suffix to create the complete domain name
 // (http://rfid_auth.local). This url is mapped to the server running in the AP network.
@@ -40,9 +43,9 @@ const char* SERVER_API_URL = "http://dmigwi.atwebpages.com/auth/time.php";
 const byte MAX_SSID_LEN = 32; // A max of 32 characters allowed.
 const byte MAX_PASS_LEN = 64; // A max of 64 characters allowed.
 
-// Delay Timeout is set to 1min and 30sec after which, the network connection.
+// Delay Timeout is set to 1 minute after which, the network connection.
 // attempts are aborted.
-const int CONNECTION_TIMEOUT = 90000;
+const int CONNECTION_TIMEOUT = 60000;
 
 // STORAGE_ADDRESS defines the location where wifi setting will be stored in the
 // EEPROM storage.
@@ -78,6 +81,15 @@ void setup() {
 
   digitalWrite(LED_BUILTIN, LOW);
   Serial.println(".");
+
+  uint8_t macAddr[6];
+  WiFi.macAddress(macAddr);
+
+  // Sets the WiFi DEVICE_ID details which should not exceed 32 characters otherwise
+  // It will not be effected.
+  char fullDeviceID[MAX_SSID_LEN];
+  sprintf(fullDeviceID, "%s-%02x%02x%02x", WiFi_Hostname, macAddr[3], macAddr[4], macAddr[5]);
+  WiFi.hostname(fullDeviceID);
 
   //Init EEPROM
   EEPROM.begin(EEPROM_SIZE);
@@ -199,11 +211,12 @@ void loop() {
 */
 bool isWiFiConnection() {
   // Wait for connection success status only till connection timeout.
-  while (WiFi.status() != WL_CONNECTED && millis() <= CONNECTION_TIMEOUT) {
+  size_t timeout = millis() + CONNECTION_TIMEOUT;
+  while (WiFi.status() != WL_CONNECTED && millis() <= timeout) {
     // Toggle ON and OFF LED state.
     digitalWrite(LED_BUILTIN, (digitalRead(LED_BUILTIN)==HIGH) ? LOW : HIGH);
     Serial.print(".");
-    delay(1000);
+    delay(500);
   }
 
   digitalWrite(LED_BUILTIN, HIGH);
@@ -301,7 +314,7 @@ String getWiFiStatusMsg() {
       status = "Wrong password";
       break;
     case WL_DISCONNECTED:
-      status = "WiFi disconnected";
+      status = "Station mode not active";
       break;
     default:
       status = "Connection Successful";
@@ -309,6 +322,7 @@ String getWiFiStatusMsg() {
     #endif
     return status;
 }
+
 
 // Server Pages
 
