@@ -1,6 +1,6 @@
 /**
  * @file builtinfiles.h
- * @brief This file is part of the WebServer example for the wifi-module.
+ * @brief This file is part of the web server config for the wifi-module.
  *  
  * This file contains long, multiline text variables for  all builtin resources.
  */

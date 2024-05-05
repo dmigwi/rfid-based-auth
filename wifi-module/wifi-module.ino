@@ -1,3 +1,20 @@
+/*
+    @file This file contains the implementation of the code that runs on the WiFi
+    module (ESP-01s)
+
+    LED_BUILTIN defines the builtin LED available on GPIO2 in the ESP-01s
+    schematics. This LED should provide the visual confirmation of whether the chip
+    is running on the normal(Standby) mode or WiFi settings configuration mode.
+    During the configuration mode, the LED should either be blinking or consistently
+    on. The configurations mode only runs once immediately after the chip boots up
+    until the Station mode connectivity is established. If the builtin light is ON
+    but is not blinking, connect to the chip via its configuration A.P. mode and 
+    update the settings. The second confirmation of the configurations mode being
+    active is that, AP_SSID appears on the scanned available WiFi networks.
+    When the builtin light goes off, the connection has been established and the WiFi
+    module is running on the stand-by(normal) waiting for actual the HTTP requests.
+*/
+
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -12,16 +29,6 @@
 // EEPROM_SIZE defines the EEPROM memory size to initialize.
 #define EEPROM_SIZE 320
 
-// LED_BUILTIN defines the builtin led on GPIO2 in the ESP-01s schematics.
-// This LED should provide the visual confirmation of whether the chip is
-// running on the normal mode or WiFi settings configuration mode.
-// During normal mode, the LED should blink atleast every 1secs,
-// if it stays on for longer than that most likely the WiFi configuration mode
-// is active.
-// The second confirmation of the WiFi settings mode being active should be the
-// AP_SSID appearing on the available networks on scanning the visible wireless networks.
-//#define LED_BUILTIN 2
-
 // uncomment next line to get debug messages output to Serial link
 //define DEBUG
 
@@ -29,8 +36,8 @@
 // following configuration is used:
 const char* AP_SSID = "RFID-based-Auth";
 const char* AP_Password = "Adm1n$tr8oR";
-// WiFi_Hostname defines part of the WiFi hostname. The full name with "RFID_AUTH_24xMac"
-// where "24xMac" represents the last 24 bits of the mac address.
+// WiFi_Hostname defines part of the WiFi hostname. The full name with
+// "RFID_AUTH_24xMac" where "24xMac" represents the last 24 bits of the mac address.
 const char* WiFi_Hostname = "RFID_AUTH";
 
 // multicast DNS is used to attach '.local' suffix to create the complete domain name
@@ -70,8 +77,8 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
-  #ifdef DEBUG
   Serial.println("");
+  #ifdef DEBUG
   Serial.print(F("Core Version: "));
   Serial.println(ESP.getCoreVersion());
   Serial.print(F("SDK Version: "));
@@ -338,7 +345,6 @@ String getWiFiStatusMsg() {
     return status;
 }
 
-
 // Server Pages
 
 /*
@@ -421,9 +427,11 @@ void handleUpdateSettings() {
   server.send(200, "text/html", buffer);
 }
 
-// ReadWiFiSettingsInEEPROM reads the contents of the STORAGE_ADDRESS an formats the read data.
-// If the address read was empty, the default byte stored in that location is 0xff.
-// It removes the EEPROM empty char from the data read.
+/*
+  ReadWiFiSettingsInEEPROM reads the contents of the STORAGE_ADDRESS an formats the read data.
+  If the address read was empty, the default byte stored in that location is 0xff.
+  It removes the EEPROM empty char from the data read.
+ */
 void ReadWiFiSettingsInEEPROM() {
   EEPROM.get(STORAGE_ADDRESS, settings);
   String ssid = replaceEmptyBytes(settings.SSID, MAX_SSID_LEN);
@@ -432,10 +440,11 @@ void ReadWiFiSettingsInEEPROM() {
   ssid.toCharArray(settings.SSID, ssid.length()+1); // set the ssid string to the struct.
   pwd.toCharArray(settings.Password, pwd.length()+1); // set the pwd string to the struct.
 }
-
-// replaceEmptyBytes it replaces all the 0xff EEPROM empty characters with 0x20 which is a whitespace.
-// It then removes the trailing and preceeding whitespaces before reassigning the formatted array
-// back to the original array.
+/*
+  replaceEmptyBytes it replaces all the 0xff EEPROM empty characters with 0x20 which is a whitespace.
+  It then removes the trailing and preceeding whitespaces before reassigning the formatted array
+  back to the original array.
+*/
 String replaceEmptyBytes(char* rawStr, byte charCount){
   char data[charCount];
   for (byte i= 0; i<charCount; i++) {
