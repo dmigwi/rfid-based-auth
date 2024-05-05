@@ -23,7 +23,7 @@
 //#define LED_BUILTIN 2
 
 // uncomment next line to get debug messages output to Serial link
-#define DEBUG
+//define DEBUG
 
 // When setting up the AP mode is used to set the Station WiFi settings the
 // following configuration is used:
@@ -69,7 +69,18 @@ void setup() {
   // Set the GPIO2 Pin as output and set it high.
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
-  Serial.println(".");
+
+  #ifdef DEBUG
+  Serial.println("");
+  Serial.print(F("Core Version: "));
+  Serial.println(ESP.getCoreVersion());
+  Serial.print(F("SDK Version: "));
+  Serial.println(ESP.getSdkVersion());
+  Serial.print(F("Chip ID: "));
+  Serial.println(ESP.getChipId());
+  Serial.print(F("Reset Reason: "));
+  Serial.println(ESP.getResetReason());
+  #endif
 
   // Delay allows the serial interface to be ready.
   for (int i=0;i<5;i++) {
