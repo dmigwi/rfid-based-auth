@@ -1,5 +1,5 @@
 
-// include the library code:
+// Include the library code:
 #include "Arduino.h"
 #include <LiquidCrystal.h>
 
@@ -38,7 +38,10 @@ void loop() {
   // print the number of seconds since reset:
   lcd.print(millis() / 1000);
 
+  serialPassthrough();
+}
 
+void serialPassthrough() {
   // SerialPassthrough code is only run when needed.
   // https://docs.arduino.cc/built-in-examples/communication/SerialPassthrough/
   #ifdef ARDUINO_AVR_LEONARDO
