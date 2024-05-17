@@ -30,7 +30,7 @@
 #define EEPROM_SIZE 320
 
 // uncomment next line to get debug messages output to Serial link
-//define DEBUG
+#define DEBUG
 
 // When setting up the AP mode is used to set the Station WiFi settings the
 // following configuration is used:
@@ -182,9 +182,12 @@ void loop() {
     size_t bufferSize = Serial.available();
     char buffer[bufferSize];
     byte counter = 0;
-    while (Serial.available()) {
-      buffer[counter] = Serial.read();
-      counter++;
+    
+    if (bufferSize > 0) {
+      while (Serial.available()) {
+        buffer[counter] = Serial.read();
+        counter++;
+      }
     }
 
     WiFiClient client;
