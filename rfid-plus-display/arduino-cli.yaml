@@ -1,0 +1,20 @@
+# File configuration is described here:
+# https://arduino.github.io/arduino-cli/1.0/configuration/
+
+directories:
+    # The equivalent of the Arduino IDE's "sketchbook" directory
+    user: ../../      
+
+logging:
+    # path to the file where logs will be written
+    file: "../rfid-plus-display.log"
+    # File logging format
+    format: txt
+    # File logging level as from warn, error, fatal to panic
+    level: warn
+
+build_cache:
+    # Make the build cache contents expire in 24 hrs
+    ttl: 24h
+    # Purge the cache after every build
+    compilations_before_purge: 1
