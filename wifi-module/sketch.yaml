@@ -1,0 +1,20 @@
+# File configuration is described here:
+# https://arduino.github.io/arduino-cli/1.0/sketch-project-file/
+
+profiles:
+  esp01s:
+    notes: It enables a reproduceable builds from the wifi-module project
+    fqbn: esp8266:esp8266:generic
+
+    platforms:
+      - platform: esp8266:esp8266 (3.1.2)
+        platform_index_url: http://arduino.esp8266.com/stable/package_esp8266com_index.json
+
+    libraries:
+      - ESP8266WiFi (1.0.2)
+      - ESP8266WebServer (0.6.4)
+      - ESP8266mDNS (1.1.0)
+      - ESP8266mDNS (1.1.0)
+
+default_profile: esp01s
+default_protocol: serial

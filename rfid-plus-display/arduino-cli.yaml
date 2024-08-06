@@ -1,9 +1,5 @@
 # File configuration is described here:
-# https://arduino.github.io/arduino-cli/1.0/configuration/
-
-directories:
-    # The equivalent of the Arduino IDE's "sketchbook" directory
-    user: ../../      
+# https://arduino.github.io/arduino-cli/1.0/configuration/   
 
 logging:
     # path to the file where logs will be written
