@@ -17,7 +17,6 @@
  * BSD license, all text here must be included in any redistribution.
  */
 
-
 #include "Arduino.h"
 
 #include <LiquidCrystal.h>
@@ -105,7 +104,7 @@ class Transmitter
         // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
         char* readPICC() {}
 
-        void writePICC(char* data) {}
+        void writePICC(const char* data) {}
 
     private:
         MFRC522 m_rc522;
@@ -170,8 +169,8 @@ int main(void)
     */
 
     // PCD Transmitter Pins 
-    const int RFID_RST {22}; //A4
-    const int RFID_SS {23}; //A5
+    const int RFID_RST {22}; // A4 Pin
+    const int RFID_SS {23};  // A5 Pin
 
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
@@ -188,6 +187,21 @@ int main(void)
     Transmitter rc522 {RFID_SS, RFID_RST};
     
 	while(true) {
+        if (rc522.isNewCardDetected())
+        {
+            // TODO: Set the Card Reading status to the display.
+            const char* cardData {rc522.readPICC()};
+
+            // TODO: Indicate success or failure of the card reading operation.
+
+            // TODO: Set the card's serial writting status to the WIFI module.
+            Serial.print(cardData);
+
+            // TODO: on feedback recieved, set the receiving message status.
+
+            // TODO: set the card writting status.
+            rc522.writePICC(cardData);
+        }
         runSerialPassthrough();
 	}
         
