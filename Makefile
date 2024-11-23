@@ -14,35 +14,35 @@ RFID_TARGET = rfid
 # Flags
 OBJ := $(eval $(wildcard $(WORKING_DIR)/*.ino))
 CONFIG_FILE = --config-file $(WORKING_DIR)/arduino-cli.yaml
-JQ_COMMAND = ".detected_ports | . [] |  select( .matching_boards | length > 0) | .port.address"
+JQ_COMMAND = ".detected_ports | . [] |  select( .matching_boards | length > 0) | .port.address" --raw-output
 BOARD_PORT = $(shell $(TARGET_EXEC) board list --json | jq -c $(JQ_COMMAND))
 
 # Sets the working directory for the rfid target.
 $(RFID_TARGET): 
-	@echo "##Setting the working directory as $(RFID_AUTH_WORKING_DIR) \n"
+	@echo "==> Setting the working directory as $(RFID_AUTH_WORKING_DIR) \n"
 	$(eval WORKING_DIR := $(RFID_AUTH_WORKING_DIR))
 
 # Sets the working directory for the esp target.
 $(ESP_TARGET):
-	@echo "##Setting the working directory as $(WIFI_MODULE_WORKING_DIR) \n"
+	@echo "==> Setting the working directory as $(WIFI_MODULE_WORKING_DIR) \n"
 	$(eval WORKING_DIR := $(WIFI_MODULE_WORKING_DIR))
 
 # Compiles the code in the rfid working directory.
 $(COMPILE_OP).$(RFID_TARGET): $(RFID_TARGET) $(OBJ)
-	@echo "## Compile the code on in $(WORKING_DIR) \n"
+	@echo "==> Compiling the code on in $(WORKING_DIR) \n"
 	$(TARGET_EXEC) compile $(CONFIG_FILE) $(WORKING_DIR)
 
 # Compiles the code in the esp working directory.
 $(COMPILE_OP).$(ESP_TARGET): $(ESP_TARGET) $(OBJ)
-	@echo "## Compile the code on in $(WORKING_DIR) \n"	
+	@echo "==> Compiling the code on in $(WORKING_DIR) \n"	
 	$(TARGET_EXEC) compile $(CONFIG_FILE) $(WORKING_DIR)
 
 # Builds and Flashes the code in the rfid working directory to the arduino board.
 $(UPLOAD_OP).$(RFID_TARGET): $(RFID_TARGET) $(OBJ)
-	@echo "## Uploading the code on to Arduino on port $(BOARD_PORT) \n"
+	@echo "==> Uploading the code on to Arduino on port $(BOARD_PORT) \n"
 	$(TARGET_EXEC) upload -p $(BOARD_PORT) $(CONFIG_FILE) $(WORKING_DIR)
 
 # Builds and Flashes the code in the esp working directory to the arduino board.
 $(UPLOAD_OP).$(ESP_TARGET):  $(ESP_TARGET) $(OBJ)
-	@echo "## Uploading the code on to Arduino on port $(BOARD_PORT) \n"
+	@echo "==> Uploading the code on to Arduino on port $(BOARD_PORT) \n"
 	$(TARGET_EXEC) upload -p $(BOARD_PORT) $(CONFIG_FILE) $(WORKING_DIR)
