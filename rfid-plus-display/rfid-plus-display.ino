@@ -19,7 +19,10 @@
 
 
 #include "Arduino.h"
+
 #include <LiquidCrystal.h>
+#include <SPI.h>
+#include <MFRC522.h>
 
 namespace Settings
 {
@@ -81,10 +84,35 @@ class Display
 // Transmitter manages the Proximity Coupling Device (PCD) interface.
 class Transmitter
 {
+    public:
+        Transmitter(int SS, int RST)
+            : m_rc522 {SS, RST}
+        {
+            SPI.begin();       // Init SPI bus
+            m_rc522.PCD_Init();  // Init MFRC522
+
+            // All the MFRC522 init function to finish execution.
+            delay(10);
+        }
+
+        // isNewCardDetected returns true for the new card detected and their
+        // respective serial numbers can be read.
+        bool isNewCardDetected()
+        {
+            return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
+        }
+
+        // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
+        char* readPICC() {}
+
+        void writePICC(char* data) {}
+
+    private:
+        MFRC522 m_rc522;
 
 };
 
-void runSerialPassThrough()
+void runSerialPassthrough()
 {
     if (serialEventRun) serialEventRun();
 
@@ -125,6 +153,26 @@ int main(void)
     const int LCD_D6 {7};
     const int LCD_D7 {6};
 
+    /*
+    * Typical pin layout used:
+    * -----------------------------------------------------------------------------------------
+    *             MFRC522      Arduino       Arduino   Arduino    Arduino Arduino
+    *             Reader/PCD   Uno/101       Mega      Nano v3    Leonardo/Micro
+    * Pro Micro Signal          Pin          Pin           Pin       Pin        Pin Pin
+    * -----------------------------------------------------------------------------------------
+    * RST/Reset    RST           9         5          D9            RESET/ICSP-5 RST
+    * SPI SS       SDA(SS)       10        53         D10           10 10 SPI MOSI
+    * MOSI         11 / ICSP-4   51        D11        ICSP-4        16 SPI MISO
+    * MISO         12 / ICSP-1   50        D12        ICSP-1        14 SPI SCK
+    * SCK          13 / ICSP-3   52        D13        ICSP-3        15
+    *
+    * SS and RST pins are configurable.
+    */
+
+    // PCD Transmitter Pins 
+    const int RFID_RST {22}; //A4
+    const int RFID_SS {23}; //A5
+
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
 
@@ -136,9 +184,11 @@ int main(void)
     lcdDisplay.print("Hello, Warszawa!", 0, 0);
 
     lcdDisplay.print("The weather today is quite cold for me!", 1, 1);
+
+    Transmitter rc522 {RFID_SS, RFID_RST};
     
 	while(true) {
-        runSerialPassThrough();
+        runSerialPassthrough();
 	}
         
 	return 0;

@@ -11,6 +11,7 @@ profiles:
 
     libraries:
       - LiquidCrystal (1.0.7)
+      - MFRC522 (1.4.11)
 
 default_profile: leonardo
 default_protocol: serial
