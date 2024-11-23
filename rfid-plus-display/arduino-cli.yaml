@@ -1,13 +1,24 @@
 # File configuration is described here:
-# https://arduino.github.io/arduino-cli/1.0/configuration/   
+# https://arduino.github.io/arduino-cli/1.1/configuration/  
 
 logging:
     # path to the file where logs will be written
-    file: "../rfid-plus-display.log"
+    file: "./rfid-plus-display.log"
     # File logging format
     format: txt
     # File logging level as from warn, error, fatal to panic
     level: warn
+
+directories:
+    # directory used to store Boards/Library Manager index files and Boards Manager platform installations
+    data: "./rfid-plus-display/build/data"
+    # directory used to stage downloaded archives during Boards/Library Manager installations.
+    downloads: "./rfid-plus-display/build/download"
+    # the equivalent of the Arduino IDE's "sketchbook" directory. Library Manager 
+    # installations are made to the libraries subdirectory of the user directory.
+    user: "./rfid-plus-display/build/user"
+    # it's the equivalent of the Arduino IDE's bundled libraries directory.
+    builtin.libraries: "./rfid-plus-display/libs"
 
 build_cache:
     # Make the build cache contents expire in 24 hrs
