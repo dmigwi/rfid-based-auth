@@ -34,8 +34,8 @@ namespace Settings
     inline constexpr int REFRESH_DELAY {700};
 
     // isInterruptFlag is set to true once an interrupt by the RFID module is
-    // recorded. It is 
-    bool isInterruptFlag {false};
+    // recorded.
+    volatile bool isInterruptFlag {false};
 };
 
 // Display manages the relaying the status of the internal workings to the
@@ -58,72 +58,94 @@ class Display
         // setStatusMsg set the status message that is to be displayed on Row 1.
         // This message is mostly concise with clear message and doesn't require
         // scrolling.
-        void setStatusMsg(char* data)
+        void setStatusMsg(char* data, bool displayNow = false)
         {
+            // If content mismatch in length, clean up the screen before printing
+            // the new content.
+            m_isClearScreen = ((strlen(data) != strlen(m_info[m_statusIndex])));
+
             m_info[m_statusIndex] = data;
+
+            // Triggers immediate screen update if true.
+            if (displayNow)
+                print();
         }
 
         // setDetailsMsg sets the details message that is to be displayed on Row 2.
         // This message is usually a longer explanation of the status message and
         // may be scrollable.
-        void setDetailsMsg(char* data)
+        void setDetailsMsg(char* data, bool displayNow = false)
         {
+            // If content mismatch in length, clean up the screen before printing
+            // the new content.
+            m_isClearScreen  = ((strlen(data) != strlen(m_info[m_detailsIndex])));
+
             m_info[m_detailsIndex] = data;
+
+            // Triggers immediate screen update if true.
+            if (displayNow)
+                print();
         }
 
         // print refreshes the display so that messages longer than max characters
         // supported can be scrolled from right to left.
         void print()
         {
-            if (sizeof(m_info[m_statusIndex]) > 0)
-                print(m_statusIndex); // print on Row 1
+            if (m_isClearScreen)
+                m_lcd.clear(); // clean up the screen first.
 
-            if (sizeof(m_info[m_detailsIndex]) > 0)
+            if (strlen(m_info[m_statusIndex]) > 0)
+                print(m_statusIndex, 0, 0); // print on Row 1
+
+            if (strlen(m_info[m_detailsIndex]) > 0)
                 print(m_detailsIndex, 0, 1); // print on Row 2
         }
     
     protected:
+        LiquidCrystal m_lcd;
+
         // print outputs the content on the display. It also manages scrolling 
         // if the character count is greater than the LCD can display at a go.
         void print(uint8_t index, int col = 0, int line = 0)
         {
-            String data {m_info[index]};
-            int startIndex {0};
-            int charCount { data.length() };
-            // endIndex is set to charCount if there less than maxColumns chars
-            // otherwise is set to maxColumns.
-            int endIndex { min(charCount, maxColumns) };
-            
-            do {
+            const char* data {m_info[index]};
+            do{
+                // If activated, hand over the control back to the caller so 
+                // that the interrupt can be processed soonest possible.
+                if (Settings::isInterruptFlag)
+                    return;
+
                 // set the cursor to column and line arguments provided.
                 m_lcd.setCursor(col, line);
 
-                // Print a message to the LCD.
-                m_lcd.print(data.substring(startIndex++, endIndex++));
+                // Print a message to the LCD. Move the cursor using pointer maths
+                m_lcd.print(data++);
 
                 // delay
                 delay(Settings::REFRESH_DELAY);
-            } while (charCount > maxColumns && charCount > endIndex);
+            }while (strlen(data) >= maxColumns);
         }
 
     private:
-        LiquidCrystal m_lcd;
-    
         // maxColumns defines the number of columns that the LCD supports.
         // (Top to Bottom)
-        static const uint8_t maxColumns {16};
+        inline static const uint8_t maxColumns {16};
         // maxRows the number of rows that the LCD supports. (Left to Right)
-        static const uint8_t maxRows {2};
+        inline static const uint8_t maxRows {2};
 
         // m_info holds the current messages to be displayed on both 
         char* m_info[maxRows]{};
 
         // m_statusIndex defines the index of the message displayed on Row 1.
-        const uint8_t m_statusIndex {0};
+        inline static const uint8_t m_statusIndex {0};
 
         // m_detailsIndex defines the index of the scrollable explanation message
         // displayed in the Row 2.
-        const uint8_t m_detailsIndex {1};
+        inline static const uint8_t m_detailsIndex {1};
+
+        // isClearScreen indicates if the display contents should be clean up the
+        // current contents on display before display new stuff.
+        bool m_isClearScreen {false};
 };
 
 // Transmitter manages the Proximity Coupling Device (PCD) interface.
@@ -137,7 +159,7 @@ class Transmitter
             m_rc522.PCD_Init();  // Init MFRC522
 
             // Allow all the MFRC522 init function to finish execution.
-            delay(10);
+            delay(10);   
         }
 
         // isNewCardDetected returns true for the new card detected and their
@@ -164,8 +186,6 @@ class Transmitter
         // the card to be done as a matter of urgency.
         void handleDetectedCard(Display& lcd)
         {
-            // lcd.setStatusMsg("New Card!!");
-            // lcd.setDetailsMsg("Holy Crap it works. Hurray!!!!");
             if (isNewCardDetected())
             {
                 // TODO: Set the Card Reading status to the display.
@@ -181,12 +201,57 @@ class Transmitter
                 // TODO: set the card writting status.
                 writePICC(cardData);
 
-                lcd.setStatusMsg("New Card!!");
+                lcd.setStatusMsg("New Card!!", true);
             }
+            lcd.setDetailsMsg("Hurray!!!! Holy Crap it works.");
+
+            // Set interrupt as successfully handled.
+            resetInterrupt();
+        }
+
+        // resetInterrupt clears the pending interrupt bits after being resolved.
+        // Enables the module to detect new interrupts.
+        void resetInterrupt()
+        {
+            m_rc522.PCD_WriteRegister(MFRC522::ComIrqReg, handledInterrupt);
+        }
+
+        // enableInterrupts activates interrupts in IRQ pin.
+        void enableInterrupts()
+        {
+            // m_rc522.PCD_WriteRegister(MFRC522::DivIEnReg, activateMFIN);
+            // m_rc522.PCD_WriteRegister(MFRC522::DivIrqReg, activateDivIrqReg);
+            m_rc522.PCD_WriteRegister(MFRC522::ComIEnReg, activateIRQ);
+        }
+
+        // activateTransmission triggers the recieving block within the rfid to send
+        // the an interrupt once detected.
+        void activateTransmission()
+        {
+            m_rc522.PCD_WriteRegister(MFRC522::FIFODataReg, MFRC522::PICC_CMD_REQA);
+            m_rc522.PCD_WriteRegister(MFRC522::CommandReg, MFRC522::PCD_Transceive);
+            m_rc522.PCD_WriteRegister(MFRC522::BitFramingReg, initDataTransmission);
         }
 
     private:
         MFRC522 m_rc522;
+
+        // activateIRQ defines the register value to be set activating the
+        // IRQ pin as an interrupt. Sets interrupts to be active Low and only 
+        // allows the receiver interrupt request (RxIRq).
+        inline static const int activateIRQ {0xA0};
+        // handledInterrupt defines the register value to be set indicating that
+        // the interrupt has been handled.
+        inline static const int handledInterrupt {0x7F};
+        // initDataTransmission defines the register value to be set when initiating
+        // data transmission via bit framing command with no last byte.
+        inline static const int initDataTransmission {0x87};
+        // activateMFIN allows the MFIN active interrupt request to be propagated to
+        // pin IRQ.
+        inline static const int activateMFIN {0x84};
+        // activateDivIrqReg indicates that the marked bits in the DivIrqReg 
+        // register are set
+        inline static const int activateDivIrqReg {0x80};
 };
 
 void runSerialPassthrough()
@@ -248,14 +313,21 @@ int main(void)
     // setup the IRQ pin
     pinMode(RFID_IRQ, INPUT_PULLUP);
 
+    // Setup the RFID interrupt handler on the RISING mode.
+    attachInterrupt(digitalPinToInterrupt(RFID_IRQ), handleInterrupt, CHANGE);
+
+    // Clear initial false positive interrupt.
+    do { ; } while(!Settings::isInterruptFlag);
+
+    // rfid.resetInterrupt(); // clear interrupts.
+    // rfid.enableInterrupts(); // enable interrupts
+    Settings::isInterruptFlag = false;
+
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
 
     lcdDisplay.setStatusMsg("Hello, Warszawa!");
     lcdDisplay.setDetailsMsg("The weather today is quite cold for me!");
-
-    // Setup the RFID interrupt handler on the RISING mode.
-    attachInterrupt(digitalPinToInterrupt(RFID_IRQ), handleInterrupt, CHANGE);
     
 	for(;;) {
         // Print to the display
@@ -270,6 +342,11 @@ int main(void)
         }
        
         runSerialPassthrough();
+
+        // RFID module is requested to transmit it data so that the microcontroller
+        // can confirm if there is an interrupt to be handled. 
+        // rfid.activateTransmission();
+
         delay(Settings::REFRESH_DELAY);
 	}
         
