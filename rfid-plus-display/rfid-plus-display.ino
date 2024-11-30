@@ -33,9 +33,9 @@ namespace Settings
     // displaying a scrolling message. 
     inline constexpr int REFRESH_DELAY {700};
 
-    // Transmitter defines in this namespace because the interrupt handler method
-    // cannot be a class method. 
-    Transmitter rfid;
+    // isInterruptFlag is set to true once an interrupt by the RFID module is
+    // recorded. It is 
+    bool isInterruptFlag {false};
 };
 
 // Display manages the relaying the status of the internal workings to the
@@ -45,51 +45,54 @@ class Display
     public:
         // Initializes the LCD library and set it to operate using 7 GPIO pins 
         // under the 4-bit mode.
-        Display(int RST, int EN, int RW, int D4, int D5, int D6, int D7)
-            : m_lcd {
-                RST, EN, RW, // Control Pins
-                D4, D5, D6, D7, // 4-bit UART data pins
-            }
+        Display(
+            uint8_t RST, uint8_t EN, uint8_t RW,  // Control Pins
+            uint8_t D4, uint8_t D5, uint8_t D6, uint8_t D7 // 4-bit UART data pins
+        )
+            : m_lcd { RST, EN, RW, D4, D5, D6, D7}
         {
             // set up the LCD's number of columns and rows:
-            m_lcd.begin(displayCols, displayRows);
+            m_lcd.begin(maxColumns, maxRows);
         }
 
-        // setMainMessage sets the main message that is to be displayed on Row 1.
+        // setStatusMsg set the status message that is to be displayed on Row 1.
         // This message is mostly concise with clear message and doesn't require
         // scrolling.
-        void setMainMessage(const String& data)
+        void setStatusMsg(char* data)
         {
-            m_message = data;
+            m_info[m_statusIndex] = data;
         }
 
-        // setStatusMessage set the status message that is to be displayed on Row 2.
-        // This message is usually a longer explanation of the main message and
+        // setDetailsMsg sets the details message that is to be displayed on Row 2.
+        // This message is usually a longer explanation of the status message and
         // may be scrollable.
-        void setStatusMessage(const String& data)
+        void setDetailsMsg(char* data)
         {
-            m_status = data;
+            m_info[m_detailsIndex] = data;
         }
 
         // print refreshes the display so that messages longer than max characters
         // supported can be scrolled from right to left.
         void print()
         {
-            if (!m_message.length() > 0)
-                print(m_message, 0, 0); // print on Row 1
+            if (sizeof(m_info[m_statusIndex]) > 0)
+                print(m_statusIndex); // print on Row 1
 
-            if (!m_status.length() > 0)
-                print(m_status, 0, 1); // print on Row 2
+            if (sizeof(m_info[m_detailsIndex]) > 0)
+                print(m_detailsIndex, 0, 1); // print on Row 2
         }
     
     protected:
         // print outputs the content on the display. It also manages scrolling 
         // if the character count is greater than the LCD can display at a go.
-        void print(const String& data, int col = 0, int line = 0)
+        void print(uint8_t index, int col = 0, int line = 0)
         {
+            String data {m_info[index]};
             int startIndex {0};
-            int endIndex {displayCols};
             int charCount { data.length() };
+            // endIndex is set to charCount if there less than maxColumns chars
+            // otherwise is set to maxColumns.
+            int endIndex { min(charCount, maxColumns) };
             
             do {
                 // set the cursor to column and line arguments provided.
@@ -100,31 +103,40 @@ class Display
 
                 // delay
                 delay(Settings::REFRESH_DELAY);
-            } while (endIndex <= charCount);
+            } while (charCount > maxColumns && charCount > endIndex);
         }
 
     private:
         LiquidCrystal m_lcd;
-        String m_message {""};
-        String m_status{""};
+    
+        // maxColumns defines the number of columns that the LCD supports.
+        // (Top to Bottom)
+        static const uint8_t maxColumns {16};
+        // maxRows the number of rows that the LCD supports. (Left to Right)
+        static const uint8_t maxRows {2};
 
-        // displayCols defines the number of columns that the LCD supports.
-        const int displayCols {16};
-        // displayRows the number of rows that the LCD supports.
-        const int displayRows {2};
+        // m_info holds the current messages to be displayed on both 
+        char* m_info[maxRows]{};
+
+        // m_statusIndex defines the index of the message displayed on Row 1.
+        const uint8_t m_statusIndex {0};
+
+        // m_detailsIndex defines the index of the scrollable explanation message
+        // displayed in the Row 2.
+        const uint8_t m_detailsIndex {1};
 };
 
 // Transmitter manages the Proximity Coupling Device (PCD) interface.
 class Transmitter
 {
     public:
-        Transmitter(int SS, int RST)
+        Transmitter(uint8_t SS, uint8_t RST)
             : m_rc522 {SS, RST}
         {
             SPI.begin();       // Init SPI bus
             m_rc522.PCD_Init();  // Init MFRC522
 
-            // All the MFRC522 init function to finish execution.
+            // Allow all the MFRC522 init function to finish execution.
             delay(10);
         }
 
@@ -147,31 +159,35 @@ class Transmitter
 
         void writePICC(const char* data) {}
 
+        // handleDetectedCard on detecting an NFC card within the field, an interrupt
+        // is triggered which forces reading and writting of the necessary data to
+        // the card to be done as a matter of urgency.
+        void handleDetectedCard(Display& lcd)
+        {
+            // lcd.setStatusMsg("New Card!!");
+            // lcd.setDetailsMsg("Holy Crap it works. Hurray!!!!");
+            if (isNewCardDetected())
+            {
+                // TODO: Set the Card Reading status to the display.
+                const char* cardData {readPICC()};
+
+                // TODO: Indicate success or failure of the card reading operation.
+
+                // TODO: Set the card's serial writting status to the WIFI module.
+                Serial.print(cardData);
+
+                // TODO: on feedback recieved, set the receiving message status.
+
+                // TODO: set the card writting status.
+                writePICC(cardData);
+
+                lcd.setStatusMsg("New Card!!");
+            }
+        }
+
     private:
         MFRC522 m_rc522;
 };
-
-// handleDetectedCard on detecting an NFC card within the field, an interrupt
-// is triggered which forces reading and writting of the necessary data to
-// the card to be done as a matter of urgency.
-void handleDetectedCard()
-{
-    if (Settings::rfid.isNewCardDetected())
-    {
-        // TODO: Set the Card Reading status to the display.
-        const char* cardData {Settings::rfid.readPICC()};
-
-        // TODO: Indicate success or failure of the card reading operation.
-
-        // TODO: Set the card's serial writting status to the WIFI module.
-        Serial.print(cardData);
-
-        // TODO: on feedback recieved, set the receiving message status.
-
-        // TODO: set the card writting status.
-        Settings::rfid.writePICC(cardData);
-    }
-}
 
 void runSerialPassthrough()
 {
@@ -195,6 +211,11 @@ void runSerialPassthrough()
     if (serialEventRun) serialEventRun();
 }
 
+// handleInterrupt sets that an interrupt has been detected allowing it to be 
+// responded to immediately.
+void handleInterrupt() {  Settings::isInterruptFlag = true; }
+
+// Main function.
 int main(void)
 {
 	init();
@@ -204,18 +225,25 @@ int main(void)
 #endif
 
     // LCD Pins Configuration
-    const int LCD_RST {12};
-    const int LCD_EN {11};
-    const int LCD_RW {10};
-    const int LCD_D4 {9};
-    const int LCD_D5 {8};
-    const int LCD_D6 {7};
-    const int LCD_D7 {6};
+    const uint8_t LCD_RST {12};
+    const uint8_t LCD_EN {11};
+    const uint8_t LCD_RW {10};
+    const uint8_t LCD_D4 {9};
+    const uint8_t LCD_D5 {8};
+    const uint8_t LCD_D6 {7};
+    const uint8_t LCD_D7 {6};
+
+    Display lcdDisplay {
+        LCD_RST, LCD_RW, LCD_EN, // Control Pins
+        LCD_D4, LCD_D5, LCD_D6, LCD_D7 // 4-bit UART data pins
+    };
 
     // PCD Transmitter Pins 
-    const int RFID_RST {22}; // A4 Pin
-    const int RFID_SS {23};  // A5 Pin
-    const int RFID_IRQ {2}; // Interrupt pin
+    const uint8_t RFID_RST {22}; // A4 Pin
+    const uint8_t RFID_SS {23};  // A5 Pin
+    const uint8_t RFID_IRQ {2}; // Interrupt pin
+
+    Transmitter rfid {RFID_SS, RFID_RST};
 
     // setup the IRQ pin
     pinMode(RFID_IRQ, INPUT_PULLUP);
@@ -223,22 +251,23 @@ int main(void)
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
 
-    Display lcdDisplay {
-        LCD_RST, LCD_RW, LCD_EN, // Control Pins
-        LCD_D4, LCD_D5, LCD_D6, LCD_D7 // 4-bit UART data pins
-    };
+    lcdDisplay.setStatusMsg("Hello, Warszawa!");
+    lcdDisplay.setDetailsMsg("The weather today is quite cold for me!");
 
-    lcdDisplay.setMainMessage("Hello, Warszawa!");
-    lcdDisplay.setStatusMessage("The weather today is quite cold for me!");
-
-    Settings::rfid = Transmitter {RFID_SS, RFID_RST};
-
-    // Activate the RFID interrupt on the RISING mode.
-    attachInterrupt(digitalPinToInterrupt(RFID_IRQ), handleDetectedCard, RISING);
+    // Setup the RFID interrupt handler on the RISING mode.
+    attachInterrupt(digitalPinToInterrupt(RFID_IRQ), handleInterrupt, CHANGE);
     
-	while(true) {
-        // refresh the display.
+	for(;;) {
+        // Print to the display
         lcdDisplay.print();
+
+        // Handle the interrupt if it has been detected.
+        if (Settings::isInterruptFlag)
+        {
+            rfid.handleDetectedCard(lcdDisplay);
+            // disable the interrupt till it is activated again.
+            Settings::isInterruptFlag = false;
+        }
        
         runSerialPassthrough();
         delay(Settings::REFRESH_DELAY);
