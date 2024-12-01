@@ -4,7 +4,7 @@
  * @section intro_sec Introduction
  *
  * This file is part rfid-plus-display package files. It is an implementation
- * of the RFID PCD (Proximity Coupled Device) that runs on a adapter customised 
+ * of the RFID PCD (Proximity Coupled Device) that runs on a adapter customised
  * mainly for AVR boards.
  *
  * @section author Author
@@ -89,8 +89,10 @@ int main(void)
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
 
-    rfid.setStatusMsg((char*)"Hello, Warszawa!");
-    rfid.setDetailsMsg((char*)"The weather today is quite cold for me!");
+    delay(Settings::REFRESH_DELAY); // Prepare to move machine to standby state.
+
+    // Machine has successfully booted up thus can be moved to the Standby State.
+    rfid.setState(Transmitter::StandBy);
     
 	for(;;) {
         // Print to the display

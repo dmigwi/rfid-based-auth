@@ -96,15 +96,27 @@ Transmitter::Transmitter(
     )
     : Display(LCD_RST, LCD_RW, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7),
         m_rc522 {RFID_SS, RFID_RST}
-{
-    SPI.begin();       // Init SPI bus
-    m_rc522.PCD_Init();  // Init MFRC522
+{ 
+    // Display the bootup welcome message.
+    setState(Transmitter::BootUp);
+    setDetailsMsg((char*)"The weather today is quite cold for me!");
+    printScreen();
+
+    SPI.begin();            // Init SPI bus.
+    m_rc522.PCD_Init();     // Init MFRC522 Library.
 
     // Allow all the MFRC522 init function to finish execution.
-    delay(10);   
+    delay(Settings::REFRESH_DELAY);
 }
 
-// print outputs the content on the display. It also manages scrolling 
+ // isNewCardDetected returns true for the new card detected and their
+// respective serial numbers can be read.
+bool Transmitter::isNewCardDetected()
+{
+    return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
+}
+
+// print outputs the content on the display. It also manages scrolling
 // if the character count is greater than the LCD can display at a go.
 void Transmitter::print(uint8_t index, uint8_t col, uint8_t line)
 {
@@ -127,9 +139,43 @@ void Transmitter::print(uint8_t index, uint8_t col, uint8_t line)
     }while (strlen(data) >= maxColumns && !onInterrupt);
 }
 
+// stateToStatus returns the string version of each state translated to
+// its corresponding status message.  
+char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
+{
+    switch (state)
+    {
+        case BootUp:
+            return (char*)"Hello, Warszawa!"; // Welcome Message.
+        case StandBy:
+            return (char*)"Tag Waiting ..."; // Waiting for a tag.
+        case ReadTag:
+            return (char*)"Tag Reading ..."; // Reading the tag.
+        case Network:
+            return (char*)"Connections ..."; // Network Connection.
+        case WriteTag:
+            return (char*)"Tag Writing ..."; // Writing the tag.
+        default:
+            return (char*)"--Unknown!--";
+    }
+}
+
+// setState updates the state of the device and the status message
+// that appears on the display.
+void Transmitter::setState(Transmitter::MachineState state)
+{
+    m_state = state; 
+
+    setStatusMsg(stateToStatus(state));
+}
+
+
 // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
 char* Transmitter::readPICC() 
 {
+    // A Tag has been detected thus the machines state is updated to read tag state.
+    setState(Transmitter::ReadTag);
+
     char* data {};
     // Stage 1: Activate the Card (Request + Anticollision + Select)
     //  - Card is activated and UID is retrieved. Card is ready for next operations.
@@ -139,7 +185,44 @@ char* Transmitter::readPICC()
     return data;
 }
 
-void Transmitter::writePICC(const char* ) {}
+// networkConn establishes Connection to the wifi Module via a serial communication.
+// The WIFI module then connects to the validation server where the PICC
+// card data is validated.
+char* Transmitter::networkConn(const char* cardData)
+{
+    // With data read from the tag, connection to the validation server is established.
+    setState(Transmitter::Network);
+
+    Serial.print(cardData);
+}
+
+// writePICC writes the provided content to the PICC. 
+void Transmitter::writePICC(const char* ) 
+{
+    // With data returned from the validation server, PICC can be written.
+    setState(Transmitter::WriteTag);
+
+
+}
+
+// ccleanUpAfterCardOps undertake reset operation back to the standby
+// state after the read, network connection and write operation
+// on a PICC completes.
+void Transmitter::cleanUpAfterCardOps()
+{
+    // Reset the machine state to standy by indicating that the device is ready
+    // to handle another PICC selected.
+    setState(Transmitter::StandBy);
+    
+    // Set interrupt as successfully handled.
+    resetInterrupt();
+
+    // disable the interrupt till it is activated again.
+    onInterrupt = false;
+
+    // Move the PICC from Active state to Idle after processing is done.
+    m_rc522.PICC_HaltA();
+}
 
 // handleDetectedCard on detecting an NFC card within the field, an interrupt
 // is triggered which forces reading and writting of the necessary data to
@@ -148,7 +231,6 @@ void Transmitter::handleDetectedCard()
 {
     if (isNewCardDetected())
     {
-        setStatusMsg((char*)"New Card!!", true);
         setDetailsMsg((char*)"Holy Crap it works, Hurray!!!!");
 
         // TODO: Set the Card Reading status to the display.
@@ -157,22 +239,14 @@ void Transmitter::handleDetectedCard()
         // TODO: Indicate success or failure of the card reading operation.
 
         // TODO: Set the card's serial writting status to the WIFI module.
-        Serial.print(cardData);
+        networkConn(cardData);
 
         // TODO: on feedback recieved, set the receiving message status.
 
         // TODO: set the card writting status.
         writePICC(cardData);
 
-        // Set interrupt as successfully handled.
-        resetInterrupt();
-
-        // disable the interrupt till it is activated again.
-        onInterrupt = false;
-
-        // Move the PICC from Active state to Idle after processing is done.
-        m_rc522.PICC_HaltA();
-
-        setStatusMsg((char*)"Successful!!!", true);
+        // Handle clean up after the card operations.
+        cleanUpAfterCardOps();
     }
 }

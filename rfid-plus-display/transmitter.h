@@ -84,7 +84,7 @@ class Display
         }
 
         // print is made virtual to allow customisation in the Transmitter class. 
-        virtual void print(uint8_t /*index*/, uint8_t /*col*/, uint8_t /*line*/){}
+        virtual void print(uint8_t /*index*/, uint8_t /*col*/, uint8_t /*line*/){};
     
     protected:
         // maxColumns defines the number of columns that the LCD supports.
@@ -116,6 +116,28 @@ class Display
 class Transmitter: public Display
 {
     public:
+        // MachineState describes the various phase the devices oscillates in
+        // between during its normal operation.
+        enum MachineState {
+            // BootUp State is the initial state set on device power On.
+            BootUp, 
+            // StandBy State is the Idle State when waiting for tag(s) to read/write.
+            StandBy,
+            // ReadTag State is set on tag detection where authentication and
+            // Blocks/Sectors reading is carried out.
+            ReadTag,
+            // Network State is set when the data read is sent to an
+            // validation server.
+            Network,
+            // WriteTag State is set when the validation server sends data to be
+            // written into the tag.
+            WriteTag,
+
+            // Unknown State is set to indicate the undefined state the machine is
+            // currently in.
+            Unknown,
+        };
+
         Transmitter(
             uint8_t RFID_SS, uint8_t RFID_RST, // RFID control pins
             uint8_t LCD_RST, uint8_t LCD_RW, uint8_t LCD_EN,  // LCD Control Pins
@@ -124,10 +146,7 @@ class Transmitter: public Display
 
         // isNewCardDetected returns true for the new card detected and their
         // respective serial numbers can be read.
-        bool isNewCardDetected()
-        {
-            return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
-        }
+        bool isNewCardDetected();
 
         // print outputs the content on the display. It also manages scrolling 
         // if the character count is greater than the LCD can display at a go.
@@ -136,13 +155,30 @@ class Transmitter: public Display
         // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
         char* readPICC();
 
-        // writePICC writes the provided content to the PICC. 
+        // networkConn establishes Connection to the wifi Module via a serial communication.
+        // The WIFI module then connects to the validation server where the PICC
+        // card data is validated.
+        char* networkConn(const char* cardData);
+
+        // writePICC writes the provided content to the PICC.
         void writePICC(const char* );
+
+        // ccleanUpAfterCardOps undertake reset operation back to the standby
+        // state after the read, network connection and write operation
+        // on a PICC completes.
+        void cleanUpAfterCardOps();
 
         // handleDetectedCard on detecting an NFC card within the field, an interrupt
         // is triggered which forces reading and writting of the necessary data to
         // the card to be done as a matter of urgency.
         void handleDetectedCard();
+
+        // stateToStatus returns the string version of each state translated to
+        // its corresponding status message. 
+        char* stateToStatus(MachineState& state) const;
+
+        // setState updates the state of the device.
+        void setState(MachineState state);
 
         // resetInterrupt clears the pending interrupt bits after being resolved.
         // Enables the module to detect new interrupts.
@@ -172,6 +208,8 @@ class Transmitter: public Display
 
     private:
         MFRC522 m_rc522;
+
+        MachineState m_state {BootUp};
 
         // activateIRQ defines the register value to be set activating the
         // IRQ pin as an interrupt. Sets interrupts to be active Low and only 
