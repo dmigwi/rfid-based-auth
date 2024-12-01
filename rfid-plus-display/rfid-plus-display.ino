@@ -36,8 +36,6 @@ namespace Settings
     // isInterruptFlag is set to true once an interrupt by the RFID module is
     // recorded.
     volatile bool isInterruptFlag {false};
-
-    // volatile int counter {0}; // for tests
 };
 
 // Display manages the relaying the status of the internal workings to the
@@ -88,12 +86,6 @@ class Display
             if (displayNow)
                 printScreen();
         }
-        // // Only needed for testing. 
-        // void setTemp(int data)
-        // {
-        //     String(data).toCharArray(m_info[m_detailsIndex], maxColumns);
-        //         printScreen();
-        // }
 
         // printScreen refreshes the display so that messages longer than max characters
         // supported can be scrolled from right to left.
@@ -201,6 +193,9 @@ class Transmitter: public Display
         {
             if (isNewCardDetected())
             {
+                setStatusMsg((char*)"New Card!!", true);
+                setDetailsMsg((char*)"Holy Crap it works, Hurray!!!!");
+
                 // TODO: Set the Card Reading status to the display.
                 const char* cardData {readPICC()};
 
@@ -214,13 +209,17 @@ class Transmitter: public Display
                 // TODO: set the card writting status.
                 writePICC(cardData);
 
-                setStatusMsg((char*)"New Card!!", true);
-            }
-            setDetailsMsg((char*)"Hurray!!!! Holy Crap it works.");
-            // setTemp(Settings::counter);
+                // Set interrupt as successfully handled.
+                resetInterrupt();
 
-            // Set interrupt as successfully handled.
-            resetInterrupt();
+                // disable the interrupt till it is activated again.
+                Settings::isInterruptFlag = false;
+
+                // Move the PICC from Active state to Idle after processing is done.
+                m_rc522.PICC_HaltA();
+
+                setStatusMsg((char*)"Successful!!!", true);
+            }
         }
 
         // resetInterrupt clears the pending interrupt bits after being resolved.
@@ -262,7 +261,6 @@ class Transmitter: public Display
 
                 // Print a message to the LCD. Move the cursor using pointer maths
                 printScreen(data++);
-                Serial.println(data);
 
                 activateTransmission(); // Trigger IRQ interrupt checking.
 
@@ -283,7 +281,7 @@ class Transmitter: public Display
         static const int activateIRQ {0xA0};
         // handledInterrupt defines the register value to be set indicating that
         // the interrupt has been handled.
-        static const int handledInterrupt {0x80};
+        static const int handledInterrupt {0x7F};
         // initDataTransmission defines the register value to be set when initiating
         // data transmission via bit framing command with no last byte.
         static const int initDataTransmission {0x87};
@@ -313,12 +311,7 @@ void runSerialPassthrough()
 
 // handleInterrupt sets that an interrupt has been detected allowing it to be 
 // responded to immediately.
-void handleInterrupt() 
-{  
-    Settings::isInterruptFlag = true;
-    // ++Settings::counter; 
-    // Serial.println(Settings::counter);
-}
+void handleInterrupt() {  Settings::isInterruptFlag = true; }
 
 // Main function.
 int main(void)
@@ -373,11 +366,7 @@ int main(void)
 
         // Handle the interrupt if it has been detected.
         if (Settings::isInterruptFlag)
-        {
             rfid.handleDetectedCard();
-            // disable the interrupt till it is activated again.
-            Settings::isInterruptFlag = false;
-        }
        
         runSerialPassthrough();
 
