@@ -97,13 +97,15 @@ class Display
 
         // setStatusMsg set the status message that is to be displayed on Row 1.
         // This message is mostly concise with clear message and doesn't require
-        // scrolling.
-        void setStatusMsg(char* data, bool displayNow = false);
+        // scrolling. The displayNow option defaults to false unless specified
+        // as true.
+        void setStatusMsg(char* data, bool displayNow=false);
 
         // setDetailsMsg sets the details message that is to be displayed on Row 2.
         // This message is usually a longer explanation of the status message and
-        // may be scrollable.
-        void setDetailsMsg(char* data, bool displayNow = false);
+        // may be scrollable. The displayNow option defaults to true unless specified
+        // as false.
+        void setDetailsMsg(char* data, bool displayNow=true);
 
         // printScreen refreshes the display so that messages longer than max characters
         // supported can be scrolled from right to left.
@@ -230,10 +232,10 @@ class Transmitter: public Display
         // networkConn establishes Connection to the wifi Module via a serial communication.
         // The WIFI module then connects to the validation server where the PICC
         // card data is validated.
-        UserData& networkConn(const byte* cardData);
+        UserData& networkConn(byte* cardData);
 
         // writePICC writes the provided content to the PICC.
-        void writePICC(const byte* cardData);
+        void writePICC(byte* cardData);
 
         // ccleanUpAfterCardOps undertake reset operation back to the standby
         // state after the read, network connection and write operation

@@ -42,7 +42,7 @@ Display::Display(
 // This message is mostly concise with clear message and doesn't require
 // scrolling. The displayNow option defaults to false unless specified
 // as true.
-void Display::setStatusMsg(char* data, bool displayNow = false)
+void Display::setStatusMsg(char* data, bool displayNow=false)
 {
     // If content mismatch in length, clean up the screen before printing
     // the new content.
@@ -59,7 +59,7 @@ void Display::setStatusMsg(char* data, bool displayNow = false)
 // This message is usually a longer explanation of the status message and
 // may be scrollable. The displayNow option defaults to true unless specified
 // as false.
-void Display::setDetailsMsg(char* data, bool displayNow = true)
+void Display::setDetailsMsg(char* data, bool displayNow=true)
 {
     // If content mismatch in length, clean up the screen before printing
     // the new content.
@@ -227,18 +227,17 @@ Transmitter::UserData& Transmitter::readPICC()
     // A Tag has been detected thus the machines state is updated to read tag state.
     setState(Transmitter::ReadTag);
 
+    setDetailsMsg((char*)"Initiating authentication to confirm key validity!");
+
     // Stage 2: Authentication
     // - Three pass authentication sequence handled by the reader automatically
     
     // sets the authentication key based on the selected card UID. 
     setPICCAuthKey();
 
-    setDetailsMsg((char*)"Initiating authentication to confirm key validity!");
-
     // Initiate authentication first using the UID based Key before the default 
     // keys can be tested.
-    Transmitter::BlockAuth tempVal {attemptAuthentication(m_PICCKey)};
-    // m_blockAuth = ;
+    BlockAuth tempVal {attemptAuthentication(m_PICCKey)};
 
     if (tempVal.status != MFRC522::STATUS_OK)
     {
@@ -269,7 +268,7 @@ Transmitter::UserData& Transmitter::readPICC()
     byte lastValidBlock {m_blockAuth.blockNo + blocksToRead + 1}; // ignore access bits block
 
     if (lastValidBlock < Settings::maxBlockNo)
-        setDetailsMsg((char*)"Initiating tag reading to extract keys!");
+        setDetailsMsg((char*)"Initiating tag reading to extract data!");
     else
     {
         setDetailsMsg((char*)"Error: tag blocks are almost full. Try another tag!");
@@ -290,15 +289,17 @@ Transmitter::UserData& Transmitter::readPICC()
 
         data.status = m_rc522.MIFARE_Read(addr, buffer, &byteCount);
         if (data.status != MFRC522::STATUS_OK)
-        {
-            setDetailsMsg((char*)"Error: Reading the tag failed. Try another tag!");
             break;
-        }
 
         // copy the read data with 2 bytes of CRC_A bytes.
         memcpy(data.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
     }
+
+    if (data.status == MFRC522::STATUS_OK)
+        setDetailsMsg((char*)"Tag reading operation was successful!");
+    else
+        setDetailsMsg((char*)"Error: Reading the tag failed. Try another tag!");
 
     return data;
 }
@@ -306,7 +307,7 @@ Transmitter::UserData& Transmitter::readPICC()
 // networkConn establishes Connection to the wifi Module via a serial communication.
 // The WIFI module then connects to the validation server where the PICC
 // card data is validated.
-Transmitter::UserData& Transmitter::networkConn(const byte* cardData)
+Transmitter::UserData& Transmitter::networkConn(byte* cardData)
 {
     UserData data {};
     data.status = MFRC522::STATUS_ERROR; // set default status to error.
@@ -314,16 +315,49 @@ Transmitter::UserData& Transmitter::networkConn(const byte* cardData)
     // With data read from the tag, connection to the validation server is established.
     setState(Transmitter::Network);
 
+    setDetailsMsg((char*)"Initiating network connection!");
+
     // Serial.print(cardData);
+
+    if (data.status == MFRC522::STATUS_OK)
+        setDetailsMsg((char*)"Network connection was successful!");
+    else
+        setDetailsMsg((char*)"Error: Network connection failed. Try another tag!");
     return data;
 }
 
 // writePICC writes the provided content to the PICC. 
-void Transmitter::writePICC(const byte* cardData) 
+void Transmitter::writePICC(byte* cardData)
 {
     // With data returned from the validation server, PICC can be written.
     setState(Transmitter::WriteTag);
 
+    setDetailsMsg((char*)"Initiating tag writting operation!");
+
+    MFRC522::StatusCode status;
+    byte blocksToRead {Settings::dataSize/Settings::blockSize};
+    byte buffer[Settings::blockSize];
+
+    byte startBlock {0};
+    byte addr {m_blockAuth.blockNo-1}; // Minus one because increment happens before usage.
+
+    while (startBlock < blocksToRead)
+    {
+        if ((++addr + 1) % 4 == 0) // Ignore access bit configuration block.
+            continue;
+
+        memcpy(cardData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
+        ++startBlock; // Only increment if a data block is read.
+
+        status = m_rc522.MIFARE_Write(addr, buffer, Settings::blockSize);
+        if (status != MFRC522::STATUS_OK)
+            break;
+    }
+
+    if (status == MFRC522::STATUS_OK)
+        setDetailsMsg((char*)"Tag writting operation was successful!");
+    else
+        setDetailsMsg((char*)"Error: Writing the tag failed. Try another tag!");
 }
 
 // ccleanUpAfterCardOps undertake reset operation back to the standby
@@ -355,12 +389,7 @@ void Transmitter::handleDetectedCard()
 {
     if (isNewCardDetected())
     {
-        setDetailsMsg((char*)"Holy Crap it works, Hurray!!!!");
-
-        // TODO: Set the Card Reading status to the display.
         UserData cardData {readPICC()};
-
-        // TODO: Indicate success or failure of the card reading operation.
 
         // Only send the cards data in the reading operation was successful.
         if (cardData.status == MFRC522::STATUS_OK)
@@ -370,8 +399,6 @@ void Transmitter::handleDetectedCard()
             cardData.status = tempVal.status;
             memcpy(cardData.readData, tempVal.readData, Settings::dataSize);
         }
-
-        // TODO: on feedback recieved, set the receiving message status.
 
         // Only write the card data if the network operation was successful.
         if (cardData.status == MFRC522::STATUS_OK)
