@@ -317,10 +317,38 @@ Transmitter::UserData& Transmitter::networkConn(byte* cardData)
 
     setDetailsMsg((char*)"Initiating network connection!");
 
-    // Serial.print(cardData);
+    // Handle Serial transmission to and from the WIFI module.
+    // Data inform of bytes to be sent to/from the WIFI module should be in the
+    // following format:
+    // [1 byte for UID size (4/7/10)] + [10 bytes card's UID] + [64 bytes Actual data]
+    // In total 75 bytes should be transmitted via the serial communication.
 
-    if (data.status == MFRC522::STATUS_OK)
+    byte byteCount = Settings::dataSize + 10 + 1;
+    byte txData[byteCount];
+    memcpy(txData, cardData, Settings::dataSize); // copy card actual data.
+    memcpy(txData+Settings::dataSize, m_rc522.uid.uidByte, 10); // copy card uid.
+    txData[Settings::dataSize+10] = m_rc522.uid.size; // copy card uid size.
+
+    // Write the data into the serial transmission.
+    Serial.write(txData, byteCount);
+    // Set the serial timeout to be 2000 milliseconds.
+    Serial.setTimeout(2000);
+
+    // read the bytes sent back from the WIFI module.
+    Serial.readBytes(txData, byteCount);
+
+    byte uidBuffer[10];
+    memcpy(uidBuffer, txData+Settings::dataSize, 10); // copy card uid.
+    int match = memcmp(m_rc522.uid.uidByte, uidBuffer, 10);
+
+    // byte previously used from size is used as status code.
+    // Code 0 indicates success otherwise anything else indicates failure.
+    if (match == 0 && txData[Settings::dataSize+10] == 0)
+    {
         setDetailsMsg((char*)"Network connection was successful!");
+        data.status = MFRC522::STATUS_OK; // update status
+        memcpy(data.readData, txData, Settings::dataSize); // update the new card data
+    }
     else
         setDetailsMsg((char*)"Error: Network connection failed. Try another tag!");
     return data;
