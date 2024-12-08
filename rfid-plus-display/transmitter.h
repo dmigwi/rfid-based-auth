@@ -78,9 +78,10 @@ namespace Settings
     static constexpr byte blockSize{16};
 
     // dataSize defines the total size in bytes that stores the authentication
-    // data. The data to be read is supposed to be 512 bits long. 
-    // This translates to 512/8 = 64 bytes.
-    static constexpr byte dataSize{64};
+    // data. The data to be read is supposed to be 384 bits long, translating
+    // to 384/8 = 48 bytes. Since each block is of 16 bytes memory capacity, 
+    // then 3 consecutive blocks will be adequate to store 384 bit/ 48 bytes.
+    static constexpr byte dataSize{48};
 };
 
 // Display manages the relaying the status of the internal workings to the
@@ -187,6 +188,7 @@ class Transmitter: public Display
         typedef struct
         {
             byte blockNo;
+            bool isCardNew;
             MFRC522::StatusCode status;
             MFRC522::MIFARE_Key authKey;
 
@@ -225,6 +227,10 @@ class Transmitter: public Display
         // one enable read/write operations of the card. First priority is granted
         // to the key generated from the UID before the default keys can be tested.
         BlockAuth attemptAuthentication(MFRC522::MIFARE_Key key);
+
+        // setUidBasedKey if the card uses non-uid based key for  authentication,
+        // it is replace with a Uid based which is quicker and safer to use.
+        MFRC522::StatusCode setUidBasedKey();
 
         // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
         UserData& readPICC();
@@ -287,9 +293,9 @@ class Transmitter: public Display
 
         BlockAuth m_blockAuth{};
 
-        // m_PICCKey defines the key be used to make read and write operations 
-        // on to a PICC.
-        MFRC522::MIFARE_Key m_PICCKey;
+        // m_PiccUidKey defines the key that is generate from the card's uid.
+        // It is more safer and easier to use than that the other default keys.
+        MFRC522::MIFARE_Key m_PiccUidKey;
 
         // activateIRQ defines the register value to be set activating the
         // IRQ pin as an interrupt. Sets interrupts to be active Low and only 
