@@ -29,8 +29,8 @@ volatile bool onInterrupt {false};
 // Display class constructor initializes the LCD library and set it to
 // operate using 7 GPIO pins under the 4-bit mode.
 Display::Display(
-    uint8_t RST, uint8_t RW, uint8_t EN,  // Control Pins
-    uint8_t D4, uint8_t D5, uint8_t D6, uint8_t D7 // 4-bit UART data pins
+    byte RST, byte RW, byte EN,  // Control Pins
+    byte D4, byte D5, byte D6, byte D7 // 4-bit UART data pins
 )
     : m_lcd {RST, RW, EN,  D4, D5, D6, D7}
 {
@@ -40,7 +40,8 @@ Display::Display(
 
 // setStatusMsg set the status message that is to be displayed on Row 1.
 // This message is mostly concise with clear message and doesn't require
-// scrolling.
+// scrolling. The displayNow option defaults to false unless specified
+// as true.
 void Display::setStatusMsg(char* data, bool displayNow = false)
 {
     // If content mismatch in length, clean up the screen before printing
@@ -56,8 +57,9 @@ void Display::setStatusMsg(char* data, bool displayNow = false)
 
 // setDetailsMsg sets the details message that is to be displayed on Row 2.
 // This message is usually a longer explanation of the status message and
-// may be scrollable.
-void Display::setDetailsMsg(char* data, bool displayNow = false)
+// may be scrollable. The displayNow option defaults to true unless specified
+// as false.
+void Display::setDetailsMsg(char* data, bool displayNow = true)
 {
     // If content mismatch in length, clean up the screen before printing
     // the new content.
@@ -90,9 +92,9 @@ void Display::printScreen()
 
 // Transmitter constructor.
 Transmitter::Transmitter(
-    uint8_t RFID_SS, uint8_t RFID_RST, // RFID control pins
-    uint8_t LCD_RST, uint8_t LCD_RW, uint8_t LCD_EN,  // LCD Control Pins
-    uint8_t LCD_D4, uint8_t LCD_D5, uint8_t LCD_D6, uint8_t LCD_D7 // LCD 4-bit UART data pins
+    byte RFID_SS, byte RFID_RST, // RFID control pins
+    byte LCD_RST, byte LCD_RW, byte LCD_EN,  // LCD Control Pins
+    byte LCD_D4, byte LCD_D5, byte LCD_D6, byte LCD_D7 // LCD 4-bit UART data pins
     )
     : Display(LCD_RST, LCD_RW, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7),
         m_rc522 {RFID_SS, RFID_RST}
@@ -100,7 +102,6 @@ Transmitter::Transmitter(
     // Display the bootup welcome message.
     setState(Transmitter::BootUp);
     setDetailsMsg((char*)"The weather today is quite cold for me!");
-    printScreen();
 
     SPI.begin();            // Init SPI bus.
     m_rc522.PCD_Init();     // Init MFRC522 Library.
@@ -118,7 +119,7 @@ bool Transmitter::isNewCardDetected()
 
 // print outputs the content on the display. It also manages scrolling
 // if the character count is greater than the LCD can display at a go.
-void Transmitter::print(uint8_t index, uint8_t col, uint8_t line)
+void Transmitter::print(byte index, byte col, byte line)
 {
     const char* data {getRowData(index)};
 
@@ -164,44 +165,164 @@ char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
 // that appears on the display.
 void Transmitter::setState(Transmitter::MachineState state)
 {
-    m_state = state; 
-
+    m_state = state;
     setStatusMsg(stateToStatus(state));
 }
 
+// setPICCAuthKey generates the authentication keys from the card UID.
+// This makes it safer since revealing the authentication keys of a 
+// single card does not affect overall system security
+void Transmitter::setPICCAuthKey()
+{
+    // A valid UID can have 4, 7 or 10 bytes. This implies that if a valid UID
+    // was identified, a minimum of 4 and a max of the 6 bytes in the init key
+    // might be XORed to generate the ultimate key to be used for authentication.
+    for (int i {0}; i < MFRC522::MF_KEY_SIZE; ++i)
+        m_PICCKey.keyByte[i] = (Settings::initKey[i] ^ m_rc522.uid.uidByte[i]);
+}
+
+// attemptAuthentication uses the various keys available to detect which
+// one enable read/write operations of the card.
+// Blocks 0 - 3 are not considered as they could be hold the cards
+// configuration used in other sectors.
+Transmitter::BlockAuth Transmitter::attemptAuthentication(MFRC522::MIFARE_Key key)
+{
+    Transmitter::BlockAuth auth;
+    auth.status = MFRC522::STATUS_ERROR; // set default status to error.
+
+    // Attempt to authenticate using the Key passed.
+    for (byte blockNo {4}; blockNo <= Settings::maxBlockNo; ++blockNo)
+    {
+        if ((blockNo + 1) % 4 == 0) // Ignore access bit configuration block.
+            continue;
+
+        auth.status = m_rc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockNo, &key, &(m_rc522.uid));
+        if (auth.status == MFRC522::STATUS_OK)
+        {
+            auth.blockNo = blockNo;
+            auth.authKey = key;
+            break; // Key used is successful in authentication.
+        }
+        else 
+        {
+            // Must reselect and activate the card again so that we can try more
+            // blocks according to: http://arduino.stackexchange.com/a/14316
+            if (!isNewCardDetected())
+                break; // If false, the card reactivation failed.
+        }
+    }
+    return auth;
+}
 
 // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
-char* Transmitter::readPICC() 
+Transmitter::UserData& Transmitter::readPICC() 
 {
+    UserData data {};
+    data.status = MFRC522::STATUS_ERROR; // set default status to error.
+    m_blockAuth.status = MFRC522::STATUS_ERROR; // set default status to error.
+
+    // Stage 1: Activate the Card (Request + Anticollision + Select)
+    //  - Card is already activated and UID retrieved. Card is ready for next operations.
+
     // A Tag has been detected thus the machines state is updated to read tag state.
     setState(Transmitter::ReadTag);
 
-    char* data {};
-    // Stage 1: Activate the Card (Request + Anticollision + Select)
-    //  - Card is activated and UID is retrieved. Card is ready for next operations.
     // Stage 2: Authentication
     // - Three pass authentication sequence handled by the reader automatically
-    // Stage 3: Read the Card block/sector contents.
+    
+    // sets the authentication key based on the selected card UID. 
+    setPICCAuthKey();
+
+    setDetailsMsg((char*)"Initiating authentication to confirm key validity!");
+
+    // Initiate authentication first using the UID based Key before the default 
+    // keys can be tested.
+    Transmitter::BlockAuth tempVal {attemptAuthentication(m_PICCKey)};
+    // m_blockAuth = ;
+
+    if (tempVal.status != MFRC522::STATUS_OK)
+    {
+        // The card has not been reprogrammed before with its UID based key.
+        for (byte i {0}; i < Settings::keysCount; ++i)
+        {
+            tempVal = attemptAuthentication(Settings::defaultPICCKeys[i]);
+            if (tempVal.status == MFRC522::STATUS_OK)
+                break; // A key the works has been identified.
+        }
+    }
+
+    if (tempVal.status != MFRC522::STATUS_OK)
+    {
+        setDetailsMsg((char*)"Error: Key validity confirmation failed. Try another tag!");
+        return data;
+    }
+
+    // Copy the validated auth data now into blockAuth.
+    m_blockAuth.status = tempVal.status;
+    m_blockAuth.blockNo = tempVal.blockNo;
+    // Undertake a deep copy of the key byte array.
+    memcpy(m_blockAuth.authKey.keyByte, tempVal.authKey.keyByte, MFRC522::MF_KEY_SIZE);
+
+    // Stage 3: Read the Card block contents.
+    // - The data to be read is supposed to of size dataSize.
+    byte blocksToRead {Settings::dataSize/Settings::blockSize};
+    byte lastValidBlock {m_blockAuth.blockNo + blocksToRead + 1}; // ignore access bits block
+
+    if (lastValidBlock < Settings::maxBlockNo)
+        setDetailsMsg((char*)"Initiating tag reading to extract keys!");
+    else
+    {
+        setDetailsMsg((char*)"Error: tag blocks are almost full. Try another tag!");
+        return data;
+    }
+
+    // Reads 16 bytes (+ 2 bytes CRC_A) from the active PICC.
+    byte buffer[Settings::blockSize + 2]; 
+    byte byteCount = sizeof(buffer);
+
+    byte startBlock {0};
+    byte addr {m_blockAuth.blockNo-1}; // Minus one because increment happens before usage.
+
+    while (startBlock < blocksToRead)
+    {
+        if ((++addr + 1) % 4 == 0) // Ignore access bit configuration block.
+            continue;
+
+        data.status = m_rc522.MIFARE_Read(addr, buffer, &byteCount);
+        if (data.status != MFRC522::STATUS_OK)
+        {
+            setDetailsMsg((char*)"Error: Reading the tag failed. Try another tag!");
+            break;
+        }
+
+        // copy the read data with 2 bytes of CRC_A bytes.
+        memcpy(data.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
+        ++startBlock; // Only increment if a data block is read.
+    }
+
     return data;
 }
 
 // networkConn establishes Connection to the wifi Module via a serial communication.
 // The WIFI module then connects to the validation server where the PICC
 // card data is validated.
-char* Transmitter::networkConn(const char* cardData)
+Transmitter::UserData& Transmitter::networkConn(const byte* cardData)
 {
+    UserData data {};
+    data.status = MFRC522::STATUS_ERROR; // set default status to error.
+
     // With data read from the tag, connection to the validation server is established.
     setState(Transmitter::Network);
 
-    Serial.print(cardData);
+    // Serial.print(cardData);
+    return data;
 }
 
 // writePICC writes the provided content to the PICC. 
-void Transmitter::writePICC(const char* ) 
+void Transmitter::writePICC(const byte* cardData) 
 {
     // With data returned from the validation server, PICC can be written.
     setState(Transmitter::WriteTag);
-
 
 }
 
@@ -222,6 +343,9 @@ void Transmitter::cleanUpAfterCardOps()
 
     // Move the PICC from Active state to Idle after processing is done.
     m_rc522.PICC_HaltA();
+
+    // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
+    m_rc522.PCD_StopCrypto1();
 }
 
 // handleDetectedCard on detecting an NFC card within the field, an interrupt
@@ -234,17 +358,26 @@ void Transmitter::handleDetectedCard()
         setDetailsMsg((char*)"Holy Crap it works, Hurray!!!!");
 
         // TODO: Set the Card Reading status to the display.
-        const char* cardData {readPICC()};
+        UserData cardData {readPICC()};
 
         // TODO: Indicate success or failure of the card reading operation.
 
-        // TODO: Set the card's serial writting status to the WIFI module.
-        networkConn(cardData);
+        // Only send the cards data in the reading operation was successful.
+        if (cardData.status == MFRC522::STATUS_OK)
+        {
+            const UserData tempVal { networkConn(cardData.readData) };
+            // copy the returned net data into card data.
+            cardData.status = tempVal.status;
+            memcpy(cardData.readData, tempVal.readData, Settings::dataSize);
+        }
 
         // TODO: on feedback recieved, set the receiving message status.
 
-        // TODO: set the card writting status.
-        writePICC(cardData);
+        // Only write the card data if the network operation was successful.
+        if (cardData.status == MFRC522::STATUS_OK)
+        {
+            writePICC(cardData.readData);
+        }
 
         // Handle clean up after the card operations.
         cleanUpAfterCardOps();
