@@ -183,13 +183,14 @@ void Transmitter::setPICCAuthKey()
 
 // attemptAuthentication uses the provided key to check which sector it can
 // authenticate successfully. Authentication is only attempted on the sector
-// trailer blocks and not required on the data blocks in that successful sector.
+// trailer blocks and not required on the data blocks in that successfully
+// authenticated sector trailer block.
 Transmitter::BlockAuth Transmitter::attemptAuthentication(MFRC522::MIFARE_Key key)
 {
     Transmitter::BlockAuth auth;
     auth.status = MFRC522::STATUS_ERROR; // set default status to error.
 
-    // Attempt to authenticate using the Key passed. Block 0-2 is not considered
+    // Attempt to authenticate using the key passed. Block 0-2 is not considered
     // because it holds manufacturers data plus user config data.
     for (byte blockNo {3}; blockNo <= Settings::maxBlockNo; ++blockNo)
     {
@@ -201,12 +202,12 @@ Transmitter::BlockAuth Transmitter::attemptAuthentication(MFRC522::MIFARE_Key ke
                 // Authentication done on a sector trailer block enables encrypted
                 // communication in all 3 blocks in that sector without extra authentication.
                 auth.blockNo = blockNo + 1;
-                break; // only break all the required blocks
+                break; // we've authenticated a sector so no need to attempt more.
             }
             else
             {
                 // Must reselect and activate the card again so that we can try more
-                // blocks according to: http://arduino.stackexchange.com/a/14316
+                // sector blocks according to: http://arduino.stackexchange.com/a/14316
                 if (!isNewCardDetected())
                     break; // If false, the card reactivation failed.
             }
@@ -215,11 +216,11 @@ Transmitter::BlockAuth Transmitter::attemptAuthentication(MFRC522::MIFARE_Key ke
 
     if (auth.status == MFRC522::STATUS_OK)
     {
-        auth.authKey = key; // Key used is successful in authentication.
+        auth.authKey = key; // Key used successfully in sector authentication.
 
         // If the current key matches the uid generated key, then the card
         // must have been used before, therefore not new.
-        auth.isCardNew = (memcmp(key.keyByte, m_PiccUidKey.keyByte, MFRC522::MF_KEY_SIZE) == 0);
+        auth.isCardNew = (memcmp(key.keyByte, m_PiccUidKey.keyByte, MFRC522::MF_KEY_SIZE) != 0);
     }
     return auth;
 }
@@ -269,6 +270,7 @@ Transmitter::UserData& Transmitter::readPICC()
     // Copy the validated auth data now into blockAuth.
     m_blockAuth.status = tempVal.status;
     m_blockAuth.blockNo = tempVal.blockNo;
+    m_blockAuth.isCardNew = tempVal.isCardNew;
     // Undertake a deep copy of the key byte array.
     memcpy(m_blockAuth.authKey.keyByte, tempVal.authKey.keyByte, MFRC522::MF_KEY_SIZE);
 
@@ -404,6 +406,9 @@ void Transmitter::writePICC(byte* cardData)
 // on a PICC completes.
 void Transmitter::cleanUpAfterCardOps()
 {
+    // Upgrade the Key if the card is still new.
+    setUidBasedKey();
+
     // Reset the machine state to standy by indicating that the device is ready
     // to handle another PICC selected.
     setState(Transmitter::StandBy);
@@ -419,6 +424,8 @@ void Transmitter::cleanUpAfterCardOps()
 
     // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
     m_rc522.PCD_StopCrypto1();
+
+    m_blockAuth = BlockAuth{}; // reset the block authentication information.
 }
 
 // handleDetectedCard on detecting an NFC card within the field, an interrupt
@@ -447,5 +454,33 @@ void Transmitter::handleDetectedCard()
 
         // Handle clean up after the card operations.
         cleanUpAfterCardOps();
+    }
+}
+
+// setUidBasedKey replaces the non-uid base key with a Uid based which is
+// quicker and safer to use. This is done on the cards detected as new.
+MFRC522::StatusCode Transmitter::setUidBasedKey()
+{
+    if (m_blockAuth.isCardNew)
+    {
+        byte keyBuffer[Settings::blockSize] = {
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Key A
+            0xFF, 0x07, 0x80, 0x69,             // Access bits
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Key B
+        };
+
+        // Modify Key A with the uid generated key
+        memcpy(keyBuffer, m_PiccUidKey.keyByte, MFRC522::MF_KEY_SIZE);
+
+        // Modify Key B with the init key
+        memcpy(keyBuffer+MFRC522::MF_KEY_SIZE+4, Settings::initKey, MFRC522::MF_KEY_SIZE);
+
+        MFRC522::StatusCode status;
+        status = m_rc522.MIFARE_Write(m_blockAuth.blockNo-1, m_blockAuth.authKey.keyByte, Settings::blockSize);
+
+        if (status == MFRC522::STATUS_OK)
+            setDetailsMsg((char*)"Upgrading to Uid-based key was successful!");
+        else
+            setDetailsMsg((char*)"Error: Upgrading to Uid-based key!");
     }
 }
