@@ -22,6 +22,16 @@
 // Assigns the global variable an initial value of false.
 volatile bool onInterrupt {false};
 
+// dumpBytes dumps the buts on the serial output.
+void dumpBytes(byte* data, byte count)
+{
+     for (byte i = 0; i < count; i++) {
+            Serial.print(data[i], HEX);
+            Serial.print(F(" "));
+        }
+        Serial.println();
+}
+
 ///////////////////////////////////////////////////
 // Display Class Members
 //////////////////////////////////////////////////
@@ -71,7 +81,7 @@ void Display::setDetailsMsg(char* data, bool displayNow = true)
     if (displayNow)
         printScreen();
 
-    //Serial.println(data);
+    // Serial.println(data);
 }
 
 // printScreen refreshes the display so that messages longer than max characters
@@ -171,62 +181,85 @@ void Transmitter::setState(Transmitter::MachineState state)
     setStatusMsg(stateToStatus(state));
 }
 
-// setPICCAuthKey generates the authentication keys from the card UID.
-// This makes it safer since revealing the authentication keys of a
-// single card does not affect overall system security
-void Transmitter::setPICCAuthKey()
+// setPICCAuthKeyB generates the KeyB authentication bytes from XORing a
+// combination; of secretKey, TagUid and KeyA. KeyB = (secretKey ⨁ KeyA ⨁ TagUid)
+// secretKey is a server provided 6 bytes to increase difficulty in KeyB duplication.
+void Transmitter::setPICCAuthKeyB(byte* secretKey)
 {
-    // A valid UID can have 4, 7 or 10 bytes. This implies that if a valid UID
-    // was identified, a minimum of 4 and a max of the 6 bytes in the init key
-    // might be XORed to generate the ultimate key to be used for authentication.
+    // A valid Uid can have 4, 7 or 10 bytes. If the Uid has less 4 bytes, the
+    // remaining bytes will be defaulted to zero each.
+    byte TagUid[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
+    byte bytesToCopy {
+        (m_rc522.uid.size < static_cast<byte>(MFRC522::MF_KEY_SIZE)) ?
+        m_rc522.uid.size :
+        static_cast<byte>(MFRC522::MF_KEY_SIZE)
+    };
+    memcpy(TagUid, m_rc522.uid.uidByte, bytesToCopy); // copy tag uid bytes.
+
     for (int i {0}; i < MFRC522::MF_KEY_SIZE; ++i)
-        m_PiccUidKey.keyByte[i] = (Settings::initKey[i] ^ m_rc522.uid.uidByte[i]);
+        m_PiccKeyB.keyByte[i] = (secretKey[i] ^ Settings::KeyA.keyByte[i] ^ TagUid[i]);
 }
 
-// attemptAuthentication uses the provided key to check which sector it can
-// authenticate successfully. Authentication is only attempted on the sector
-// trailer blocks. This is done to identify the specific sector to use for data
-// storage.
-Transmitter::BlockAuth Transmitter::attemptAuthentication(MFRC522::MIFARE_Key key)
+// attemptBlock2Auth loops through all the supported sectors
+// attempting to authenticate the Block 2 part of it. If successful contents
+// of the block 2 address are read. It trys to find which of the hardcoded
+// default list of KeyA keys is currently supported by the tag.
+void Transmitter::attemptBlock2Auth(Transmitter::BlockAuth& auth, MFRC522::MIFARE_Key key)
 {
-    Transmitter::BlockAuth auth;
     auth.status = MFRC522::STATUS_ERROR; // set default status to error.
 
-    // Attempt to authenticate using the key passed. Block 0-2 is not considered
-    // because it holds manufacturers data plus user config data.
-    for (byte blockNo {3}; blockNo <= Settings::maxBlockNo; ++blockNo)
+    // Block 0-3 belongs to sector 0 are not considered. The first valid block 2
+    // considered appears in sector 1 and at intervals of Settings::sectorBlocks.
+    byte block2Addr {6}; // block 2 in sector 1.
+
+    // Reads 16 bytes (+ 2 bytes CRC_A) from the active PICC.
+    byte buffer[Settings::blockSize + 2];
+    byte byteCount = sizeof(buffer);
+
+    for (; block2Addr <= Settings::maxBlockNo; block2Addr += Settings::sectorBlocks)
     {
-        if ((blockNo + 1) % 4 == 0) // Only consider sector trailer blocks
+        MFRC522::PICC_Command keyType = MFRC522::PICC_CMD_MF_AUTH_KEY_A;
+        auth.status = m_rc522.PCD_Authenticate(keyType, block2Addr, &key, &(m_rc522.uid));
+        if (auth.status == MFRC522::STATUS_OK)
         {
-            auth.status = m_rc522.PCD_Authenticate(
-                MFRC522::PICC_CMD_MF_AUTH_KEY_A, blockNo, &key, &(m_rc522.uid)
-                );
+            // Authentication is successful on this block 2 address. Now
+            // compute the block 0 address in the current sector.
+            auth.block0Addr = block2Addr - 2;
+            // Serial.print(F("Data block chosen :"));
+            // Serial.println(auth.block0Addr);
+            // Serial.print(F("Sector block chosen :"));
+            // Serial.println(block2Addr+1);
+
+            // Reads Contents of Block2
+            auth.status = m_rc522.MIFARE_Read(block2Addr, buffer, &byteCount);
             if (auth.status == MFRC522::STATUS_OK)
-            {
-                // Authentication is successful on this sector trailer block.
-                // we've found a sector to use, so no need to check any more.
-                auth.blockNo = blockNo + 1;
                 break;
-            }
             else
-            {
-                // Must reselect and activate the card again so that we can try more
-                // sector blocks according to: http://arduino.stackexchange.com/a/14316
-                if (!isNewCardDetected())
-                    break; // If false, the card reactivation failed.
-            }
+                isNewCardDetected(); // reactivate the tag after previous op failure.
+
+            byteCount = sizeof(buffer); // reset the buffer counter.
+        }
+        else
+        {
+            // Must reselect and activate the card again so that we can try more
+            // sector blocks according to: http://arduino.stackexchange.com/a/14316
+            if (!isNewCardDetected())
+                break; // If false, the card reactivation failed.
         }
     }
 
     if (auth.status == MFRC522::STATUS_OK)
     {
-        auth.authKey = key; // Key used successfully in sector authentication.
+        // Deep copy the validated keyA.
+       memcpy(auth.authKeyA.keyByte, key.keyByte, MFRC522::MF_KEY_SIZE);
 
-        // If the current key matches the uid generated key, then the card
+        // If the current keyA matches the default KeyA, then the card
         // must have been used before, therefore not new.
-        auth.isCardNew = (memcmp(key.keyByte, m_PiccUidKey.keyByte, MFRC522::MF_KEY_SIZE) != 0);
+        auth.isCardNew = (memcmp(key.keyByte, Settings::KeyA.keyByte, MFRC522::MF_KEY_SIZE) != 0);
+
+        // copy the read data without the 2 bytes of CRC_A.
+        memcpy(auth.block2Data, buffer, Settings::blockSize);
     }
-    return auth;
 }
 
 // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
@@ -243,46 +276,68 @@ Transmitter::UserData Transmitter::readPICC()
     setState(Transmitter::ReadTag);
     setDetailsMsg((char*)"Initiating authentication to confirm key validity!");
 
-    // Stage 2: Authentication
-    // - Three pass authentication sequence handled by the reader automatically
-    // - After authentication is successful on a sector, read/write op can be
-    // undertaken on to the blocks in that sector without extra authentication.
-    // sets the authentication key based on the selected card UID.
-    setPICCAuthKey();
+    // Stage 2: Attempt Authentication using KeyA and read block 2 address contents
+    // if successful.
+   
+    // Initiate authentication first using the default main KeyA
+    attemptBlock2Auth(m_blockAuth, Settings::KeyA);
+    // Serial.println("Auth using main keyA ");
 
-    // Initiate authentication first using the UID based Key before the default
-    // keys can be tested.
-    BlockAuth tempVal {attemptAuthentication(m_PiccUidKey)};
-
-    if (tempVal.status != MFRC522::STATUS_OK)
+    if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
         // The card has not been reprogrammed before with its UID based key.
         for (byte i {0}; i < Settings::keysCount; ++i)
         {
-            tempVal = attemptAuthentication(Settings::defaultPICCKeys[i]);
-            if (tempVal.status == MFRC522::STATUS_OK)
+            // Serial.print("Auth using default keyA: ");
+            // Serial.println(i);
+            attemptBlock2Auth(m_blockAuth, Settings::defaultPICCKeyAs[i]);
+            if (m_blockAuth.status == MFRC522::STATUS_OK)
                 break; // A key that works has been identified, break the loop.
         }
     }
 
-    if (tempVal.status != MFRC522::STATUS_OK)
+    if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
-        setDetailsMsg((char*)"Error: Key validity confirmation failed. Try another tag!");
+        setDetailsMsg((char*)"Error: KeyA validity failed. Try another tag!");
         return data;
     }
 
-    // Copy the validated auth data now into blockAuth.
-    m_blockAuth.status = tempVal.status;
-    m_blockAuth.blockNo = tempVal.blockNo;
-    m_blockAuth.isCardNew = tempVal.isCardNew;
-  
-    // Undertake a deep copy of the key byte array.
-    memcpy(m_blockAuth.authKey.keyByte, tempVal.authKey.keyByte, MFRC522::MF_KEY_SIZE);
+    // Serial.println(F(" Block 2 contents! ")); 
+    // dumpBytes(m_blockAuth.block2Data, Settings::blockSize);
 
-    // Stage 3: Read the Card block contents.
+    // Stage 3: Send the block 2 Contents to the trust organization for validation.
+    // - Use Serial transmission to send the data to and from the WIFI module.
+
+    //  Send block 2 address data.
+    Serial.write(m_blockAuth.block2Data, Settings::blockSize);
+
+    // Request the secret key sent from the trust organization. A default of 
+    // 0x00 bytes is preset.
+    byte secretKey[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
+
+    /*
+    // Handle narrowing conversion
+    byte bytesRead { static_cast<byte>(Serial.readBytes(secretKey, MFRC522::MF_KEY_SIZE))};
+    if (bytesRead != MFRC522::MF_KEY_SIZE)
+    {
+        setDetailsMsg((char*)"Error: Fetching the Secret Key failed. Try another tag!");
+        return data;
+    }
+    */
+
+    // This is only for tests: copy simulated secret key bytes.
+    byte tempReadBytes[MFRC522::MF_KEY_SIZE] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
+    memcpy(secretKey, tempReadBytes, MFRC522::MF_KEY_SIZE);
+    
+    // KeyB needs to be computed using the successfully read secret key.
+    // KeyA only has read-only permissions to block 2 address while KeyB has both
+    // read and write permissions to the whole sector.
+    setPICCAuthKeyB(secretKey);
+
+    // Stage 4: Read the Card block contents.
     // - The data to be read is supposed to of size dataSize.
     byte blocksToRead {Settings::dataSize/Settings::blockSize};
-    byte lastValidBlock {(byte)(m_blockAuth.blockNo + blocksToRead)};
+    byte lastValidBlock {(byte)(m_blockAuth.block0Addr + blocksToRead)};
 
     if (lastValidBlock <= Settings::maxBlockNo)
         setDetailsMsg((char*)"Initiating tag reading to extract data!");
@@ -297,19 +352,26 @@ Transmitter::UserData Transmitter::readPICC()
     byte byteCount = sizeof(buffer);
 
     byte startBlock {0};
-    byte addr {m_blockAuth.blockNo};
+    byte addr {m_blockAuth.block0Addr};
+
+    // Serial.println(F(" Tag Serial contents! ")); 
+    // dumpBytes(m_rc522.uid.uidByte, m_rc522.uid.size);
+
+    // Serial.println(F(" KeyB contents! ")); 
+    // dumpBytes(m_PiccKeyB.keyByte, MFRC522::MF_KEY_SIZE);
 
     for (;startBlock < blocksToRead && addr < Settings::maxBlockNo; ++addr)
     {
-        if ((addr + 1) % 4 == 0)
+        if ((addr + 1) % Settings::sectorBlocks == 0)
             continue;   // Ignore access bit configuration block.
 
         // authenticate each block before attempting a read operation.
+        // If the card is new, use either KeyA or KeyB as they are similar otherwise use Tag Specific KeyB.
         data.status = m_rc522.PCD_Authenticate(
-            MFRC522::PICC_CMD_MF_AUTH_KEY_A,    // authenticate with Key A
-            addr,                               // block number
-            &m_blockAuth.authKey,               // Auth Key already preset
-            &(m_rc522.uid)                      // Selected Card Uid
+            MFRC522::PICC_CMD_MF_AUTH_KEY_B,                                // authenticate with Key B
+            addr,                                                           // data block number
+            (m_blockAuth.isCardNew ? &m_blockAuth.authKeyA : &m_PiccKeyB),  // KeyB already preset
+            &(m_rc522.uid)                                                  // Selected Card Uid
         );
 
         if (data.status != MFRC522::STATUS_OK)
@@ -328,6 +390,9 @@ Transmitter::UserData Transmitter::readPICC()
         setDetailsMsg((char*)"Tag reading operation was successful!");
     else
         setDetailsMsg((char*)"Error: Reading the tag failed. Try another tag!");
+
+    // Serial.println(F(" TrustKey contents! ")); 
+    // dumpBytes(data.readData, Settings::dataSize);
 
     return data;
 }
@@ -358,8 +423,6 @@ Transmitter::UserData Transmitter::networkConn(byte* cardData)
 
     // Write the data into the serial transmission.
     Serial.write(txData, byteCount);
-    // Set the serial timeout to be 3000 milliseconds.
-    Serial.setTimeout(3000);
 
     // read the bytes sent back from the WIFI module.
     size_t bytesRead = Serial.readBytes(txData, byteCount);
@@ -396,12 +459,12 @@ void Transmitter::writePICC(byte* cardData)
     byte buffer[Settings::blockSize];
 
     byte startBlock {0};
-    byte addr {m_blockAuth.blockNo};
+    byte addr {m_blockAuth.block0Addr};
 
     for (;startBlock < blocksToRead && addr < Settings::maxBlockNo; ++addr)
     {
-        if ((addr + 1) % 4 == 0) // Ignore access bit configuration block.
-            continue;
+        if ((addr + 1) % Settings::sectorBlocks == 0)
+            continue; // Ignore access bit configuration block.
 
         memcpy(cardData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
@@ -417,11 +480,13 @@ void Transmitter::writePICC(byte* cardData)
         setDetailsMsg((char*)"Error: Writing the tag failed. Try another tag!");
 }
 
-// ccleanUpAfterCardOps undertake reset operation back to the standby
+// cleanUpAfterCardOps undertake reset operation back to the standby
 // state after the read, network connection and write operation
 // on a PICC completes.
 void Transmitter::cleanUpAfterCardOps()
 {
+    delay(Settings::AUTH_DELAY); // Delay before making another PICC selection.
+
     // Reset the machine state to standy by indicating that the device is ready
     // to handle another PICC selected.
     setState(Transmitter::StandBy);
@@ -464,6 +529,7 @@ void Transmitter::handleDetectedCard()
         {
             writePICC(cardData.readData);
         }
+        // */
 
          if (cardData.status == MFRC522::STATUS_OK)
          {
@@ -483,19 +549,69 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
 
     if (m_blockAuth.isCardNew)
     {
+        // card must be new otherwise KeyA and KeyB won't match as specified
+        // in the tag's transport configuration from the factory.
+        
+        // +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+        // | ------------- KEY A -------------- | - ACCESS BITS -  | -GP- | -------------- KEY B ------------- |
+        // | 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF | 0xFF, 0x07, 0x80 | 0x00 | 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF |
+        // +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+        // Above diagram describes the default transport configuration of the 
+        // Mifare classics family of tags sector block.
+        // Default KeyA = 0xFF FF FF FF FF FFh.
+        // Default KeyB = 0xFF FF FF FF FF FFh.
         byte keyBuffer[Settings::blockSize] = {
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Key A
-            0xFF, 0x07, 0x80, 0x69,             // Access bits
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Key B
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // KeyA
+            0xFF, 0x07, 0x80,                   // Access bits (Read/Write using Key A only)
+            0x00,                               // General Purpose byte
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // KeyB
         };
 
-        // Modify Key A with the uid generated key
-        memcpy(keyBuffer, m_PiccUidKey.keyByte, MFRC522::MF_KEY_SIZE);
+        // Set KeyA.
+        memcpy(keyBuffer, Settings::KeyA.keyByte, MFRC522::MF_KEY_SIZE);
 
-        // Modify Key B with the init key
-        memcpy(keyBuffer+MFRC522::MF_KEY_SIZE+4, Settings::initKey, MFRC522::MF_KEY_SIZE);
+        // Set Access Bits
+        memcpy(keyBuffer+MFRC522::MF_KEY_SIZE, Settings::AccessBits, Settings::accessBitsCount);
 
-        status = m_rc522.MIFARE_Write(m_blockAuth.blockNo-1, m_blockAuth.authKey.keyByte, Settings::blockSize);
+        // Set KeyB.
+        memcpy(keyBuffer+MFRC522::MF_KEY_SIZE+4, m_PiccKeyB.keyByte, MFRC522::MF_KEY_SIZE);
+
+        // Subtracting one from the first data block value get the sector trailer
+        // block address. Static cast is used because of the narrowing conversion
+        // caused by using an LValue in the subtraction.
+        byte sectorTrailer {static_cast<byte>(m_blockAuth.block0Addr + Settings::sectorBlocks - 1)};
+
+        // Serial.print(F("Sector block used :"));
+        // Serial.println(sectorTrailer);
+
+        // Serial.println(F("Sector Block Configuration :"));
+        // dumpBytes(keyBuffer, Settings::blockSize);
+        // return;
+
+        // authenticate the sector trailer block before attempting a write operation.
+        // Consecutive change of the same sector trailer will require KeyB as the
+        // modified access bits block KeyA from every accessing the sector trailer block
+        // anymore.
+        status = m_rc522.PCD_Authenticate(
+            MFRC522::PICC_CMD_MF_AUTH_KEY_A,    // authenticate with Key A
+            sectorTrailer,                      // block number
+            &m_blockAuth.authKeyA,              // Key B is same as Key A for a new tag.
+            &(m_rc522.uid)                      // Selected Card Uid
+        );
+
+        // Serial.print(F("MIFARE_Auth Sector trailer auth: "));
+        // Serial.println(m_rc522.GetStatusCodeName(status));
+
+        // On successful authentication attempt to write the sector trailer block.
+        if (status == MFRC522::STATUS_OK)
+            status = m_rc522.MIFARE_Write(
+                sectorTrailer,
+                keyBuffer, 
+                Settings::blockSize
+            );
+
+        // Serial.print(F("MIFARE_Write Sector trailer reading: "));
+        // Serial.println(m_rc522.GetStatusCodeName(status));
 
         if (status == MFRC522::STATUS_OK)
             setDetailsMsg((char*)"Upgrading to Uid-based key was successful!");

@@ -40,13 +40,17 @@ namespace Settings
     // displaying a scrolling message. 
     constexpr int REFRESH_DELAY {700};
 
+    // AUTH_DELAY defines the length in ms the systems waits to initiate a new
+    // authentication after the previous one finished. 
+    constexpr int AUTH_DELAY {2000};
+
     // keysCount defines the number of default keys to attempt authentication
     // with in new cards.
     constexpr int keysCount {9};
 
-    // defaultPICCKeys defines the common/default keys used to access blocks.
+    // defaultPICCKeyAs defines the common/default keys used to access blocks.
     // https://github.com/nfc-tools/libnfc/blob/0e8cd450e1ad467b845399d55f6322a39c072b44/utils/nfc-mfclassic.c#L82-L92
-    static const MFRC522::MIFARE_Key defaultPICCKeys[keysCount] 
+    static const MFRC522::MIFARE_Key defaultPICCKeyAs[keysCount] 
     {
         {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, // FF FF FF FF FF FF = factory default
         {0xd3, 0xf7, 0xd3, 0xf7, 0xd3, 0xf7}, // D3 F7 D3 F7 D3 F7
@@ -59,10 +63,20 @@ namespace Settings
         {0xab, 0xcd, 0xef, 0x12, 0x34, 0x56}, // AB CD EF 12 34 56
     };
 
-    // initKey defines the initial key that is manipulated using the card's UID
-    // to achieve an encryption key that doesn't threaten the security of the
-    // other cards if revealed.  i.e (DA 51 E7 A4 3B 42)
-    static const byte initKey[MFRC522::MF_KEY_SIZE] = {0xDA, 0x51, 0xE7, 0xA4, 0x3B, 0x42};
+    // KeyA defines the default hardcoded key that has read only to read block 2
+    // contents in a trust key sector during the first pass of the 
+    // authentication process. i.e (DA 91 E7 A4 3B 42)
+    static const MFRC522::MIFARE_Key KeyA = {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42};
+
+    constexpr byte accessBitsCount {3};
+
+    // AccessBits configure the read and write permissions of each block in a sector.
+    // Sector K - Sector to be used to store a Trust Key.
+    //     block 0 – data block        |    Read: Only KeyB, Write: Only KeyB
+    //     block 1 – data block        |    Read: Only KeyB, Write: Only KeyB
+    //     block 2 – data block        |    Read: KeyA/KeyB, Write: KeyA/KeyB
+    //     block 3 – sector trailer    |    Read: Never,     Write: Only KeyB
+    static const byte AccessBits[accessBitsCount] = {0x4B, 0x44, 0xBB};
 
     // Since all Mifare classics NFC chip have consistent a block organisations
     // between sectors 0 and 16. The read/write operation will only consider the
@@ -72,16 +86,36 @@ namespace Settings
     // Going forward the every 4th block holds access bits for the specific sector
     // i.e. the next 3 blocks following.
     // Block 63 is the last block in the 16 sectors to be considered.
-    static const byte maxBlockNo {63};
+    const byte maxBlockNo {63};
+
+    // sectorBlocks defines the number of blocks in each sector and are organised
+    // as follows for the mifare classics family.
+    //     sector 0:
+    //          block 0 – manufacturer data (read only)
+    //          block 1 – data block
+    //          block 2 – data block
+    //          block 3 – sector trailer
+    //      sector 1:
+    //          block 4 – data block
+    //          block 5 – data block
+    //          block 6 – data block
+    //          block 7 – sector trailer
+    //        ...
+    //      sector 16:
+    //          block 60 – data block
+    //          block 61 – data block
+    //          block 62 – data block
+    //          block 63 – sector trailer
+    constexpr byte sectorBlocks {4};
 
     // blockSize defines the size in bytes of one block in a PICC.
-    static constexpr byte blockSize{16};
+    constexpr byte blockSize{16};
 
     // dataSize defines the total size in bytes that stores the authentication
     // data. The data to be read is supposed to be 384 bits long, translating
     // to 384/8 = 48 bytes. Since each block is of 16 bytes memory capacity, 
     // then 3 consecutive blocks will be adequate to store 384 bit/ 48 bytes.
-    static constexpr byte dataSize{48};
+    constexpr byte dataSize{48};
 };
 
 // Display manages the relaying the status of the internal workings to the
@@ -185,11 +219,11 @@ class Transmitter: public Display
         // has been established on a card.
         typedef struct
         {
-            byte blockNo;
-            bool isCardNew;
+            byte block0Addr;  // Holds the first data block address in each sector.
+            bool isCardNew; // True only if the Uid based key is not set as the default.
             MFRC522::StatusCode status;
-            MFRC522::MIFARE_Key authKey;
-
+            MFRC522::MIFARE_Key authKeyA; // It
+            byte block2Data[Settings::blockSize]; // After auth, block2 contents are read.
         } BlockAuth;
 
 
@@ -198,7 +232,6 @@ class Transmitter: public Display
         {
             MFRC522::StatusCode status;
             byte readData[Settings::dataSize];
-    
         } UserData;
 
         
@@ -216,15 +249,15 @@ class Transmitter: public Display
         // if the character count is greater than the LCD can display at a go.
         void print(byte index, byte col, byte line) override;
 
-        // setPICCAuthKey generates the authentication keys from the card UID.
-        // This makes it safer since revealing the authentication keys of a 
-        // single card does not affect overall system security
-        void setPICCAuthKey();
+        // setPICCAuthKeyB generates the KeyB authentication bytes from XORing a
+        // combination of secretKey, TagUid and KeyA. KeyB = (secretKey ⨁ KeyA ⨁ TagUid)
+        // secretKey is a server provided 6 bytes key unique to every trust key.
+        void setPICCAuthKeyB(byte* secretKey);
 
-        // attemptAuthentication uses the various keys available to detect which
-        // one enable read/write operations of the card. First priority is granted
-        // to the key generated from the UID before the default keys can be tested.
-        BlockAuth attemptAuthentication(MFRC522::MIFARE_Key key);
+        // attemptBlock2Auth loops through all the supported sectors
+        // attempting to authenticate the Block 2 part of it. It trys to find
+        // which of the hardcoded default KeyAs is currently supported by the tag.
+        void attemptBlock2Auth(BlockAuth& auth, MFRC522::MIFARE_Key key);
 
         // setUidBasedKey if the card uses non-uid based key for  authentication,
         // it is replace with a Uid based which is quicker and safer to use.
@@ -291,9 +324,11 @@ class Transmitter: public Display
 
         BlockAuth m_blockAuth{};
 
-        // m_PiccUidKey defines the key that is generate from the card's uid.
-        // It is more safer and easier to use than that the other default keys.
-        MFRC522::MIFARE_Key m_PiccUidKey;
+        // m_PiccKeyB defines the key that is generated from the card's uid.
+        // It is more safer and easier to use than that the other default keys
+        // it is unique for every tag and cannot be computed the trust organization's
+        // secret key.
+        MFRC522::MIFARE_Key m_PiccKeyB;
 
         // activateIRQ defines the register value to be set activating the
         // IRQ pin as an interrupt. Sets interrupts to be active Low and only 
