@@ -250,10 +250,10 @@ class Transmitter: public Display
         // networkConn establishes Connection to the wifi Module via a serial communication.
         // The WIFI module then connects to the validation server where the PICC
         // card data is validated.
-        UserData networkConn(byte* cardData);
+        void networkConn(UserData &data);
 
         // writePICC writes the provided content to the PICC.
-        void writePICC(byte* cardData);
+        void writePICC(UserData &data);
 
         // ccleanUpAfterCardOps undertake reset operation back to the standby
         // state after the read, network connection and write operation

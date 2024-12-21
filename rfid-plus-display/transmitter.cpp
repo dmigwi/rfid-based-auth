@@ -367,6 +367,8 @@ Transmitter::UserData Transmitter::readPICC()
         if (data.status != MFRC522::STATUS_OK)
             break; // break on read authentication failure
 
+        byteCount = sizeof(buffer); // reset the buffer count.
+
         // copy the read data without the 2 bytes of CRC_A.
         memcpy(data.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
@@ -377,7 +379,7 @@ Transmitter::UserData Transmitter::readPICC()
     else
         setDetailsMsg((char*)"Reading the tag failed. Try another tag!");
 
-    // Serial.println(F(" TrustKey contents! ")); 
+    // Serial.println(F(" TrustKey contents reading! ")); 
     // dumpBytes(data.readData, Settings::dataSize);
 
     return data;
@@ -386,10 +388,21 @@ Transmitter::UserData Transmitter::readPICC()
 // networkConn establishes Connection to the wifi Module via a serial communication.
 // The WIFI module then connects to the validation server where the PICC
 // card data is validated.
-Transmitter::UserData Transmitter::networkConn(byte* cardData)
+void Transmitter::networkConn(Transmitter::UserData &cardData)
 {
-    UserData data {};
-    data.status = MFRC522::STATUS_ERROR; // set default status to error.
+
+    cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
+
+    /*// for tests only
+    byte testData[] = {
+       0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44, 0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE,
+       0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+       0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12,
+    };
+
+    cardData.status = MFRC522::STATUS_OK; // update status
+    memcpy(cardData.readData, testData, Settings::dataSize);
+    return;*/
 
     // With data read from the tag, connection to the validation server is established.
     setState(Transmitter::Network);
@@ -403,7 +416,7 @@ Transmitter::UserData Transmitter::networkConn(byte* cardData)
 
     size_t byteCount = Settings::dataSize + 10 + 1;
     byte txData[byteCount];
-    memcpy(txData, cardData, Settings::dataSize); // copy card actual data.
+    memcpy(txData, cardData.readData, Settings::dataSize); // copy card actual data.
     memcpy(txData+Settings::dataSize, m_rc522.uid.uidByte, 10); // copy card uid.
     txData[Settings::dataSize+10] = m_rc522.uid.size; // copy card uid size.
 
@@ -425,22 +438,20 @@ Transmitter::UserData Transmitter::networkConn(byte* cardData)
     if (byteCount == bytesRead && match == 0 && txData[Settings::dataSize+10] == 0)
     {
         setDetailsMsg((char*)"Network connection was successful!");
-        data.status = MFRC522::STATUS_OK; // update status
-        memcpy(data.readData, txData, Settings::dataSize); // update the new card data
+        cardData.status = MFRC522::STATUS_OK; // update status
+        memcpy(cardData.readData, txData, Settings::dataSize); // update the new card data
+        return;
     }
-    else
-        setDetailsMsg((char*)"Network connection failed!");
-    return data;
+    setDetailsMsg((char*)"Network connection failed!");
 }
 
 // writePICC writes the provided content to the PICC.
-void Transmitter::writePICC(byte* cardData)
+void Transmitter::writePICC(Transmitter::UserData &cardData)
 {
     // With data returned from the validation server, PICC can be written.
     setState(Transmitter::WriteTag);
     setDetailsMsg((char*)"Initiating tag writing operation!");
 
-    MFRC522::StatusCode status;
     byte blocksToRead {Settings::dataSize/Settings::blockSize};
     byte buffer[Settings::blockSize];
 
@@ -452,15 +463,18 @@ void Transmitter::writePICC(byte* cardData)
         if ((addr + 1) % Settings::sectorBlocks == 0)
             continue; // Ignore access bit configuration block.
 
-        memcpy(cardData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
+        memcpy(cardData.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
 
-        status = m_rc522.MIFARE_Write(addr, buffer, Settings::blockSize);
-        if (status != MFRC522::STATUS_OK)
+        cardData.status = m_rc522.MIFARE_Write(addr, buffer, Settings::blockSize);
+        if (cardData.status != MFRC522::STATUS_OK)
             break;
     }
 
-    if (status == MFRC522::STATUS_OK)
+    // Serial.println(F(" TrustKey contents writing! ")); 
+    // dumpBytes(cardData.readData, Settings::dataSize);
+
+    if (cardData.status == MFRC522::STATUS_OK)
         setDetailsMsg((char*)"Tag writing operation was successful!");
     else
         setDetailsMsg((char*)"Writing the tag failed. Try another tag!");
@@ -503,25 +517,15 @@ void Transmitter::handleDetectedCard()
 
         // Only send the cards data in the reading operation was successful.
         if (cardData.status == MFRC522::STATUS_OK)
-        {
-            const UserData tempVal { networkConn(cardData.readData) };
-            // copy the returned net data into card data.
-            cardData.status = tempVal.status;
-            memcpy(cardData.readData, tempVal.readData, Settings::dataSize);
-        }
+            networkConn(cardData);
 
         // Only write the card data if the network operation was successful.
         if (cardData.status == MFRC522::STATUS_OK)
-        {
-            writePICC(cardData.readData);
-        }
-        // */
+            writePICC(cardData);
 
          if (cardData.status == MFRC522::STATUS_OK)
-         {
-            // Upgrade the Key if the card is still new.
-            cardData.status = setUidBasedKey();
-         }
+            cardData.status = setUidBasedKey(); // Upgrade Key if the card is new.
+
         // Handle clean up after the card operations.
         cleanUpAfterCardOps();
     }
