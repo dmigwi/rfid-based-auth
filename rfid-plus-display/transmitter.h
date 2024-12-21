@@ -123,6 +123,12 @@ namespace Settings
 class Display
 {
     public:
+        typedef struct
+        {
+           char* text; // display text
+           byte index; // tracks the cursor position.
+        } Msg;
+
         // Initializes the LCD library and set it to operate using 7 GPIO pins 
         // under the 4-bit mode.
         Display(
@@ -144,24 +150,9 @@ class Display
         // supported can be scrolled from right to left.
         void printScreen();
 
-        // printScreen writes content on the actual display window.
-        void printScreen(const char* info)  { m_lcd.print(info);  }
-
-        // getRowData returns the row data once provided with the respective index.
-        const char* getRowData(byte index) const
-        {
-            return m_info[min(index, maxRows-1)];
-        }
-
-        // setScreenCursor set the position of the cursor. It should be used
-        // before any content is written on the screen.
-        void setScreenCursor(byte col, byte line)  
-        {  
-            m_lcd.setCursor(col, line);
-        }
-
-        // print is made virtual to allow customisation in the Transmitter class. 
-        virtual void print(byte /*index*/, byte /*col*/, byte /*line*/){};
+        // print outputs the content on the display. It also manages scrolling 
+        // if the character count is greater than the LCD can display at a go.
+        void print(Msg &data, byte col, byte line);
     
     protected:
         // maxColumns defines the number of columns that the LCD supports.
@@ -171,22 +162,16 @@ class Display
         // maxRows the number of rows that the LCD supports. (Left to Right)
         static const byte maxRows {2};
 
-        // m_statusIndex defines the index of the message displayed on Row 1.
-        static const byte m_statusIndex {0};
-
-        // m_detailsIndex defines the index of the scrollable explanation message
-        // displayed in the Row 2.
-        static const byte m_detailsIndex {1};
-
-        // isClearScreen indicates if the display contents should be clean up the
-        // current contents on display before display new stuff.
-        bool m_isClearScreen {false};
-
     private:
         LiquidCrystal m_lcd;
 
-        // m_info holds the current messages to be displayed on both 
-        char* m_info[maxRows]{};
+        // m_statusMsg defines the text and cursor position of the message
+        // displayed on Row 1.
+        Msg m_statusMsg {};
+
+        // m_detailsMsg defines the text and cursor position of the message
+        // displayed on Row 2.
+        Msg m_detailsMsg {};
 };
 
 // Transmitter manages the Proximity Coupling Device (PCD) interface.
@@ -222,7 +207,7 @@ class Transmitter: public Display
             byte block0Addr;  // Holds the first data block address in each sector.
             bool isCardNew; // True only if the Uid based key is not set as the default.
             MFRC522::StatusCode status;
-            MFRC522::MIFARE_Key authKeyA; // It
+            MFRC522::MIFARE_Key authKeyA;
             byte block2Data[Settings::blockSize]; // After auth, block2 contents are read.
         } BlockAuth;
 
@@ -244,10 +229,6 @@ class Transmitter: public Display
         // isNewCardDetected returns true for the new card detected and their
         // respective serial numbers can be read.
         bool isNewCardDetected();
-
-        // print outputs the content on the display. It also manages scrolling 
-        // if the character count is greater than the LCD can display at a go.
-        void print(byte index, byte col, byte line) override;
 
         // setPICCAuthKeyB generates the KeyB authentication bytes from XORing a
         // combination of secretKey, TagUid and KeyA. KeyB = (secretKey ⨁ KeyA ⨁ TagUid)

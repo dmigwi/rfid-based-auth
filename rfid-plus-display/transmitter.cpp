@@ -54,11 +54,9 @@ Display::Display(
 // as true.
 void Display::setStatusMsg(char* data, bool displayNow = false)
 {
-    // If content mismatch in length, clean up the screen before printing
-    // the new content.
-    m_isClearScreen = ((strlen(data) != strlen(m_info[m_statusIndex])));
-
-    m_info[m_statusIndex] = data;
+    // If content mismatch, clean up the screen before printing the new content.
+    m_statusMsg.text = data;
+    m_statusMsg.index = 0;
 
     // Triggers immediate screen update if true.
     if (displayNow)
@@ -69,13 +67,12 @@ void Display::setStatusMsg(char* data, bool displayNow = false)
 // This message is usually a longer explanation of the status message and
 // may be scrollable. The displayNow option defaults to true unless specified
 // as false.
+// NB: Text longer than 41 characters distorts the row 1 characters.
 void Display::setDetailsMsg(char* data, bool displayNow = true)
 {
-    // If content mismatch in length, clean up the screen before printing
-    // the new content.
-    m_isClearScreen  = ((strlen(data) != strlen(m_info[m_detailsIndex])));
-
-    m_info[m_detailsIndex] = data;
+    // If content mismatch, clean up the screen before printing the new content.
+    m_detailsMsg.text = data;
+    m_detailsMsg.index = 0;
 
     // Triggers immediate screen update if true.
     if (displayNow)
@@ -88,14 +85,25 @@ void Display::setDetailsMsg(char* data, bool displayNow = true)
 // supported can be scrolled from right to left.
 void Display::printScreen()
 {
-    if (m_isClearScreen)
-        m_lcd.clear(); // clean up the screen first.
+    if (strlen(m_statusMsg.text) > 0)
+        print(m_statusMsg, 0, 0); // print on Row 1
 
-    if (strlen(m_info[m_statusIndex]) > 0)
-        print(m_statusIndex, 0, 0); // print on Row 1
+    if (strlen(m_detailsMsg.text) > 0)
+        print(m_detailsMsg, 0, 1); // print on Row 2
+}
 
-    if (strlen(m_info[m_detailsIndex]) > 0)
-        print(m_detailsIndex, 0, 1); // print on Row 2
+// print outputs the content on the display. It also manages scrolling
+// if the character count is greater than the LCD can display at a go.
+void Display::print(Msg &data, byte col, byte line)
+{
+    // set the cursor to column and line arguments provided.
+    m_lcd.setCursor(col, line);
+    // Print a message to the LCD. Move the cursor using pointer maths
+    m_lcd.print(data.text + data.index);
+
+    if (strlen(data.text) > maxColumns)
+        if ((strlen(data.text) - ++data.index) <  maxColumns)
+            data.index = 0; // reset cursor position if it exceeds max characters. 
 }
 
 ///////////////////////////////////////////////////
@@ -129,28 +137,6 @@ bool Transmitter::isNewCardDetected()
     return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
 }
 
-// print outputs the content on the display. It also manages scrolling
-// if the character count is greater than the LCD can display at a go.
-void Transmitter::print(byte index, byte col, byte line)
-{
-    const char* data {getRowData(index)};
-
-    do{
-        // set the cursor to column and line arguments provided.
-        setScreenCursor(col, line);
-
-        // Print a message to the LCD. Move the cursor using pointer maths
-        printScreen(data++);
-
-        activateTransmission(); // Trigger IRQ interrupt checking.
-
-        // delay
-        delay(Settings::REFRESH_DELAY);
-
-    // If Interrupt is activated, hand over the control back to the
-    // caller so that the interrupt can be processed soonest possible.
-    }while (strlen(data) >= maxColumns && !onInterrupt);
-}
 
 // stateToStatus returns the string version of each state translated to
 // its corresponding status message.
@@ -165,7 +151,7 @@ char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
         case ReadTag:
             return (char*)"Tag Reading ..."; // Reading the tag.
         case Network:
-            return (char*)"Connections ..."; // Network Connection.
+            return (char*)"WiFi Conn ..."; // Network Connection.
         case WriteTag:
             return (char*)"Tag Writing ..."; // Writing the tag.
         default:
@@ -274,7 +260,7 @@ Transmitter::UserData Transmitter::readPICC()
 
     // A Tag has been detected thus the machines state is updated to read tag state.
     setState(Transmitter::ReadTag);
-    setDetailsMsg((char*)"Initiating authentication to confirm key validity!");
+    setDetailsMsg((char*)"Init authentication to validate key!");
 
     // Stage 2: Attempt Authentication using KeyA and read block 2 address contents
     // if successful.
@@ -298,7 +284,7 @@ Transmitter::UserData Transmitter::readPICC()
 
     if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
-        setDetailsMsg((char*)"Error: KeyA validity failed. Try another tag!");
+        setDetailsMsg((char*)"KeyA validity failed. Try another tag!");
         return data;
     }
 
@@ -343,7 +329,7 @@ Transmitter::UserData Transmitter::readPICC()
         setDetailsMsg((char*)"Initiating tag reading to extract data!");
     else
     {
-        setDetailsMsg((char*)"Error: tag blocks are almost full. Try another tag!");
+        setDetailsMsg((char*)"Tag blocks are full. Try another tag!");
         return data;
     }
 
@@ -389,7 +375,7 @@ Transmitter::UserData Transmitter::readPICC()
     if (data.status == MFRC522::STATUS_OK)
         setDetailsMsg((char*)"Tag reading operation was successful!");
     else
-        setDetailsMsg((char*)"Error: Reading the tag failed. Try another tag!");
+        setDetailsMsg((char*)"Reading the tag failed. Try another tag!");
 
     // Serial.println(F(" TrustKey contents! ")); 
     // dumpBytes(data.readData, Settings::dataSize);
@@ -443,7 +429,7 @@ Transmitter::UserData Transmitter::networkConn(byte* cardData)
         memcpy(data.readData, txData, Settings::dataSize); // update the new card data
     }
     else
-        setDetailsMsg((char*)"Error: Network connection failed. Try another tag!");
+        setDetailsMsg((char*)"Network connection failed!");
     return data;
 }
 
@@ -477,7 +463,7 @@ void Transmitter::writePICC(byte* cardData)
     if (status == MFRC522::STATUS_OK)
         setDetailsMsg((char*)"Tag writing operation was successful!");
     else
-        setDetailsMsg((char*)"Error: Writing the tag failed. Try another tag!");
+        setDetailsMsg((char*)"Writing the tag failed. Try another tag!");
 }
 
 // cleanUpAfterCardOps undertake reset operation back to the standby
@@ -614,9 +600,9 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
         // Serial.println(m_rc522.GetStatusCodeName(status));
 
         if (status == MFRC522::STATUS_OK)
-            setDetailsMsg((char*)"Upgrading to Uid-based key was successful!");
+            setDetailsMsg((char*)"Upgrading key config was successful!");
         else
-            setDetailsMsg((char*)"Error: Upgrading to Uid-based key!");
+            setDetailsMsg((char*)"Upgrading key config failed!");
     }
 
     return status;
