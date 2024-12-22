@@ -1,19 +1,32 @@
-/*
-    @file This file contains the implementation of the code that runs on the WiFi
-    module (ESP-01s)
+/*!
+ * @file wifi-module.ino
+ *
+ * @section intro_sec Introduction
+ *
+ * This file contains the implementation of the code that runs on the WiFi module (ESP-01s)
+ * 
+ *  The builtin LED is available on GPIO2 Pin in the ESP-01s schematics.
+ *  This LED should provide the visual confirmation of whether the chip
+ *  is running on the normal(Standby) mode or WiFi settings configuration mode.
+ *  During the configuration mode, the LED should either be blinking or consistently
+ *  on. The configurations mode only runs once immediately after the chip boots up
+ *  until the Station mode connectivity is established. If the builtin LED is ON
+ *  but is not blinking, connect to the chip via its configuration A.P. mode and 
+ *  update the settings. The second confirmation of the configurations mode being
+ *  active is that, AP_SSID appears on the scanned available WiFi networks.
+ *  When the builtin LED goes off, the connection has been established and the WiFi
+ *  module is running on the stand-by(normal) waiting for actual the HTTP requests.
+ *
+ * @section author Author
+ *
+ * Written by dmigwi (Migwi Ndung'u)  @2024
+ * LinkedIn: https://www.linkedin.com/in/migwi-ndungu/
+ *
+ *  @section license License
+ *
+ * BSD license, all text here must be included in any redistribution.
+ */
 
-    LED_BUILTIN defines the builtin LED available on GPIO2 in the ESP-01s
-    schematics. This LED should provide the visual confirmation of whether the chip
-    is running on the normal(Standby) mode or WiFi settings configuration mode.
-    During the configuration mode, the LED should either be blinking or consistently
-    on. The configurations mode only runs once immediately after the chip boots up
-    until the Station mode connectivity is established. If the builtin light is ON
-    but is not blinking, connect to the chip via its configuration A.P. mode and 
-    update the settings. The second confirmation of the configurations mode being
-    active is that, AP_SSID appears on the scanned available WiFi networks.
-    When the builtin light goes off, the connection has been established and the WiFi
-    module is running on the stand-by(normal) waiting for actual the HTTP requests.
-*/
 
 #include <EEPROM.h>
 #include <ESP8266WiFi.h>
@@ -24,44 +37,48 @@
 // The text of builtin files are in this header file
 #include "builtinfiles.h"
 
-// SERIAL_BAUD_RATE defines the speed of communication on the serial interface.
-#define SERIAL_BAUD_RATE 115200
-// EEPROM_SIZE defines the EEPROM memory size to initialize.
-#define EEPROM_SIZE 320
-
 // uncomment next line to get debug messages output to Serial link
 //define DEBUG
 
-// When setting up the AP mode is used to set the Station WiFi settings the
-// following configuration is used:
-const char* AP_SSID = "RFID-based-Auth";
-const char* AP_Password = "Adm1n$tr8oR";
-// WiFi_Hostname defines part of the WiFi hostname. The full name with
-// "RFID_AUTH_24xMac" where "24xMac" represents the last 24 bits of the mac address.
-const char* WiFi_Hostname = "RFID_AUTH";
+namespace Settings
+{
+    // SERIAL_BAUD_RATE defines the speed of communication on the serial interface.
+    const long int SERIAL_BAUD_RATE {115200};
 
-// multicast DNS is used to attach '.local' suffix to create the complete domain name
-// (http://rfid_auth.local). This url is mapped to the server running in the AP network.
-const char* AP_Server_Domain = "rfid_auth";
+    // EEPROM_SIZE defines the EEPROM memory size to initialize.
+    const byte EEPROM_SIZE {320};
 
-// SERVER_API_URL defines the URL to which the HTTP client will make API calls to.
-const char* SERVER_API_URL = "http://dmigwi.atwebpages.com/auth/time.php";
+    // When setting up the AP mode is used to set the Station WiFi settings the
+    // following configuration is used:
+    const char* AP_SSID {"RFID-based-Auth"};
+    const char* AP_Password  {"Adm1n$tr8oR"};
+    // WiFi_Hostname defines part of the WiFi hostname. The full name with
+    // "RFID_AUTH_24xMac" where "24xMac" represents the last 24 bits of the mac address.
+    const char* WiFi_Hostname {"RFID_AUTH"};
 
-const byte MAX_SSID_LEN = 32; // A max of 32 characters allowed.
-const byte MAX_PASS_LEN = 64; // A max of 64 characters allowed.
+    // multicast DNS is used to attach '.local' suffix to create the complete domain name
+    // (http://rfid_auth.local). This url is mapped to the server running in the AP network.
+    const char* AP_Server_Domain {"rfid_auth"};
 
-// Delay Timeout is set to 1 minute after which, the network connection.
-// attempts are aborted.
-const int CONNECTION_TIMEOUT = 60000;
+    // SERVER_API_URL defines the URL to which the HTTP client will make API calls to.
+    const char* SERVER_API_URL {"http://dmigwi.atwebpages.com/auth/time.php"};
 
-// STORAGE_ADDRESS defines the location where wifi setting will be stored in the
-// EEPROM storage.
-const int STORAGE_ADDRESS = 0;
+    const byte MAX_SSID_LEN {32}; // A max of 32 characters allowed.
+    const byte MAX_PASS_LEN {64}; // A max of 64 characters allowed.
+
+    // Delay Timeout is set to 1 minute after which, the network connection.
+    // attempts are aborted.
+    const int CONNECTION_TIMEOUT {60000};
+
+    // STORAGE_ADDRESS defines the location where wifi setting will be stored in the
+    // EEPROM storage.
+    const int STORAGE_ADDRESS {0};
+};
 
 // Struct Object to hold the station mode wifi settings.
-struct WifiConfigSettings{
-  char SSID[MAX_SSID_LEN];
-  char Password[MAX_PASS_LEN];
+typedef struct WifiConfigSettings{
+  char SSID[Settings::MAX_SSID_LEN];
+  char Password[Settings::MAX_PASS_LEN];
 };
 
 WifiConfigSettings settings;
@@ -71,7 +88,7 @@ ESP8266WebServer server(80);
 
 void setup() {
   // Initialize the serial interface.
-  Serial.begin(SERIAL_BAUD_RATE);
+  Serial.begin(Settings::SERIAL_BAUD_RATE);
 
   // Set the GPIO2 Pin as output and set it high.
   pinMode(LED_BUILTIN, OUTPUT);
@@ -105,8 +122,8 @@ void setup() {
 
   // Sets the WiFi DEVICE_ID details which should not exceed 32 characters otherwise
   // It will not be effected.
-  char fullDeviceID[MAX_SSID_LEN];
-  sprintf(fullDeviceID, "%s-%02x%02x%02x", WiFi_Hostname, macAddr[3], macAddr[4], macAddr[5]);
+  char fullDeviceID[Settings::MAX_SSID_LEN];
+  sprintf(fullDeviceID, "%s-%02x%02x%02x", Settings::WiFi_Hostname, macAddr[3], macAddr[4], macAddr[5]);
   WiFi.hostname(fullDeviceID);
 
   //Init EEPROM
@@ -195,7 +212,7 @@ void loop() {
     #endif
 
     // configure traged server and url
-    http.begin(client, SERVER_API_URL);  // HTTP
+    http.begin(client, Settings::SERVER_API_URL);  // HTTP
     http.addHeader("Content-Type", "application/json");
 
     #ifdef DEBUG 
@@ -233,7 +250,7 @@ void loop() {
 */
 bool isWiFiConnection() {
   // Wait for connection success status only till connection timeout.
-  size_t timeout = millis() + CONNECTION_TIMEOUT;
+  size_t timeout = millis() + Settings::CONNECTION_TIMEOUT;
   while (WiFi.status() != WL_CONNECTED && millis() <= timeout) {
     // Toggle ON and OFF LED state.
     digitalWrite(LED_BUILTIN, (digitalRead(LED_BUILTIN)==HIGH) ? LOW : HIGH);
@@ -265,7 +282,7 @@ bool isWiFiConnection() {
 */
 void setUpConfigAP() {
   WiFi.mode(WIFI_AP);
-  bool isSet = WiFi.softAP(AP_SSID, AP_Password);
+  bool isSet = WiFi.softAP(Settings::AP_SSID, Settings::AP_Password);
 
   #ifdef DEBUG
   Serial.print(F("Initializing soft-AP ... "));
@@ -282,7 +299,7 @@ void setUpConfigAP() {
   Serial.println(F("'"));
   #endif
 
-  isSet  = MDNS.begin(AP_Server_Domain);
+  isSet  = MDNS.begin(Settings::AP_Server_Domain);
   if (isSet) { 
     #ifdef DEBUG
     Serial.println(F("MDNS responder is running on: http://rfid_auth.local"));
@@ -352,8 +369,8 @@ String getWiFiStatusMsg() {
 */
 void handleRoot() {
   char buffer[1500];  // Preallocate a large chunk to avoid memory fragmentation
-  sprintf(buffer, rootContent, settings.SSID, MAX_SSID_LEN, MAX_SSID_LEN,
-          settings.Password, MAX_PASS_LEN, MAX_PASS_LEN);
+  sprintf(buffer, rootContent, settings.SSID, Settings::MAX_SSID_LEN, Settings::MAX_SSID_LEN,
+          settings.Password, Settings::MAX_PASS_LEN, Settings::MAX_PASS_LEN);
   server.send(200, "text/html", buffer);
 }
 
@@ -413,7 +430,7 @@ void handleUpdateSettings() {
       pwd.toCharArray(settings.Password, pwd.length()+1); // set the pwd string to the struct.
 
       // Update the EEPROM with the latest settings.
-      EEPROM.put(STORAGE_ADDRESS, settings);
+      EEPROM.put(Settings::STORAGE_ADDRESS, settings);
       // Commit the EEPROM Changes.
       EEPROM.commit();
 
@@ -433,9 +450,9 @@ void handleUpdateSettings() {
   It removes the EEPROM empty char from the data read.
  */
 void ReadWiFiSettingsInEEPROM() {
-  EEPROM.get(STORAGE_ADDRESS, settings);
-  String ssid = replaceEmptyBytes(settings.SSID, MAX_SSID_LEN);
-  String pwd = replaceEmptyBytes(settings.Password, MAX_PASS_LEN);
+  EEPROM.get(Settings::STORAGE_ADDRESS, settings);
+  String ssid = replaceEmptyBytes(settings.SSID, Settings::MAX_SSID_LEN);
+  String pwd = replaceEmptyBytes(settings.Password, Settings::MAX_PASS_LEN);
 
   ssid.toCharArray(settings.SSID, ssid.length()+1); // set the ssid string to the struct.
   pwd.toCharArray(settings.Password, pwd.length()+1); // set the pwd string to the struct.
