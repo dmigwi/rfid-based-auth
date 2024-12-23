@@ -8,6 +8,8 @@
 #ifndef BUILTIN_FILES_
 #define BUILTIN_FILES_
 
+#include "Arduino.h"
+
 // rootContent defines content for the route http://rfid_auth.local/
 static const char rootContent[] PROGMEM = R"==(
     <!DOCTYPE html>

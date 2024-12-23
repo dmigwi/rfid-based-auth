@@ -37,7 +37,7 @@ $(COMPILE_OP).$(RFID_TARGET): $(RFID_TARGET) $(OBJ)
 # Compiles the code in the esp working directory.
 $(COMPILE_OP).$(ESP_TARGET): $(ESP_TARGET) $(OBJ)
 	@echo "==> Compiling the code on in $(WORKING_DIR) \n"	
-	$(TARGET_EXEC) compile $(CONFIG_FILE) $(WORKING_DIR) -v
+	$(TARGET_EXEC) compile $(CONFIG_FILE) $(WORKING_DIR)
 
 # Builds and Flashes the code in the rfid working directory to the arduino board.
 $(UPLOAD_OP).$(RFID_TARGET): $(RFID_TARGET) $(OBJ)
@@ -51,7 +51,7 @@ $(UPLOAD_OP).$(ESP_TARGET):  $(ESP_TARGET) $(OBJ)
 
 # Following the bug fixes described here:
 # https://github.com/espressif/esptool/issues/972#issuecomment-2054169803
-# the default esptool.py file must be replaced with updated-esptool.py file
+# the default esptool.py file must be replaced with updated-esptool.py file.
 $(ESP_TOOL_TARGET): $(ESP_TARGET)
 	@echo "==> Replacing the default esptool.py file with updated-esptool.py contents"
 	cp $(WORKING_DIR)/updated-esptool.py $(ESP_TOOL_PATH)
