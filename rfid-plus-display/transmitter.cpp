@@ -55,8 +55,9 @@ Display::Display(
 void Display::setStatusMsg(char* data, bool displayNow = false)
 {
     // If content mismatch, clean up the screen before printing the new content.
-    m_statusMsg.text = data;
+    strcpy(m_statusMsg.text, data);
     m_statusMsg.index = 0;
+    m_detailsMsg.index = 0;
 
     // Triggers immediate screen update if true.
     if (displayNow)
@@ -67,43 +68,62 @@ void Display::setStatusMsg(char* data, bool displayNow = false)
 // This message is usually a longer explanation of the status message and
 // may be scrollable. The displayNow option defaults to true unless specified
 // as false.
-// NB: Text longer than 41 characters distorts the row 1 characters.
 void Display::setDetailsMsg(char* data, bool displayNow = true)
 {
     // If content mismatch, clean up the screen before printing the new content.
-    m_detailsMsg.text = data;
+    strcpy(m_detailsMsg.text, strcat(data, "  ")); // new text used by display
     m_detailsMsg.index = 0;
 
     // Triggers immediate screen update if true.
     if (displayNow)
         printScreen();
-
-    // Serial.println(data);
 }
 
 // printScreen refreshes the display so that messages longer than max characters
 // supported can be scrolled from right to left.
 void Display::printScreen()
 {
-    if (strlen(m_statusMsg.text) > 0)
+    if (strlen(m_statusMsg.text) > 1) // Has more than just  null terminator.
         print(m_statusMsg, 0, 0); // print on Row 1
 
-    if (strlen(m_detailsMsg.text) > 0)
+    if (strlen(m_detailsMsg.text) > 1) // Has more than just null terminator.
         print(m_detailsMsg, 0, 1); // print on Row 2
 }
 
 // print outputs the content on the display. It also manages scrolling
 // if the character count is greater than the LCD can display at a go.
-void Display::print(Msg &data, byte col, byte line)
+void Display::print(Msg &msg, byte col, byte line)
 {
+    byte allTextLen { strlen(msg.text) };
+    byte viewTextlen { allTextLen };
+
+    // Empty view text created with null terminator accounted for.
+    char viewTxt[maxColumns+1] = {'\0'};
+    char *startChar {msg.text};
+
+    // Only For texts which needs scrolling to view it all.
+    if (allTextLen > maxColumns+1)
+    {
+        // Only move col value if cursor position is is below maxColumns
+        col = (msg.index > maxColumns) ? col : (maxColumns - msg.index);
+        viewTextlen = min(msg.index+1, maxColumns);
+        startChar = (msg.index < maxColumns) ? msg.text : msg.text+msg.index+1-maxColumns;
+    }
+
+    // Copying the view text substring is done because cursor shifting on
+    // long texts overlays some characters on display row 1. Not acceptable!
+    memcpy(viewTxt, startChar, viewTextlen);
+
     // set the cursor to column and line arguments provided.
     m_lcd.setCursor(col, line);
     // Print a message to the LCD. Move the cursor using pointer maths
-    m_lcd.print(data.text + data.index);
+    m_lcd.print(viewTxt);
 
-    if (strlen(data.text) > maxColumns)
-        if ((strlen(data.text) - ++data.index) <  maxColumns)
-            data.index = 0; // reset cursor position if it exceeds max characters. 
+    // Increments the cursor position or resets its to zero.
+    // The reseting condition is:
+    //          Cursor_Position > (allTextLen + (maxColumns -1))
+    if (allTextLen > maxColumns && (++msg.index > (allTextLen+maxColumns-1)))
+        msg.index = 0;
 }
 
 ///////////////////////////////////////////////////
@@ -139,23 +159,24 @@ bool Transmitter::isNewCardDetected()
 
 
 // stateToStatus returns the string version of each state translated to
-// its corresponding status message.
+// its corresponding status message. A consistent length of 16 characters
+// plus a null terminator is returned for each message.
 char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
 {
     switch (state)
     {
         case BootUp:
-            return (char*)"Hello, Warszawa!"; // Welcome Message.
+            return (char*)"Hello, Warszawa!"; // Welcome Message. (16 chars + \0)
         case StandBy:
-            return (char*)"Tag Waiting ..."; // Waiting for a tag.
+            return (char*)"Tag Waiting...  "; // Waiting for a tag. (16 chars + \0)
         case ReadTag:
-            return (char*)"Tag Reading ..."; // Reading the tag.
+            return (char*)"Tag Reading...  "; // Reading the tag. (16 chars + \0)
         case Network:
-            return (char*)"WiFi Conn ..."; // Network Connection.
+            return (char*)"WiFi Commun...  "; // Network Connection. (16 chars + \0)
         case WriteTag:
-            return (char*)"Tag Writing ..."; // Writing the tag.
+            return (char*)"Tag Writing...  "; // Writing the tag. (16 chars + \0)
         default:
-            return (char*)"--Unknown!--";
+            return (char*)"  --Unknown!--  "; // (16 chars + \0)
     }
 }
 
@@ -164,7 +185,8 @@ char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
 void Transmitter::setState(Transmitter::MachineState state)
 {
     m_state = state;
-    setStatusMsg(stateToStatus(state));
+    char* status {stateToStatus(state)};
+    setStatusMsg(status);
 }
 
 // setPICCAuthKeyB generates the KeyB authentication bytes from XORing a
@@ -211,10 +233,6 @@ void Transmitter::attemptBlock2Auth(Transmitter::BlockAuth& auth, MFRC522::MIFAR
             // Authentication is successful on this block 2 address. Now
             // compute the block 0 address in the current sector.
             auth.block0Addr = block2Addr - 2;
-            // Serial.print(F("Data block chosen :"));
-            // Serial.println(auth.block0Addr);
-            // Serial.print(F("Sector block chosen :"));
-            // Serial.println(block2Addr+1);
 
             // Reads Contents of Block2
             auth.status = m_rc522.MIFARE_Read(block2Addr, buffer, &byteCount);
@@ -264,23 +282,23 @@ Transmitter::UserData Transmitter::readPICC()
 
     // Stage 2: Attempt Authentication using KeyA and read block 2 address contents
     // if successful.
-   
+
     // Initiate authentication first using the default main KeyA
     attemptBlock2Auth(m_blockAuth, Settings::KeyA);
-    // Serial.println("Auth using main keyA ");
 
+    #ifdef IS_TRUST_ORG
+    // Should only be run during the Trust Organization operating Mode!.
     if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
         // The card has not been reprogrammed before with its UID based key.
         for (byte i {0}; i < Settings::keysCount; ++i)
         {
-            // Serial.print("Auth using default keyA: ");
-            // Serial.println(i);
             attemptBlock2Auth(m_blockAuth, Settings::defaultPICCKeyAs[i]);
             if (m_blockAuth.status == MFRC522::STATUS_OK)
                 break; // A key that works has been identified, break the loop.
         }
     }
+    #endif
 
     if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
@@ -288,7 +306,7 @@ Transmitter::UserData Transmitter::readPICC()
         return data;
     }
 
-    // Serial.println(F(" Block 2 contents! ")); 
+    // Serial.println(F(" Block 2 contents! "));
     // dumpBytes(m_blockAuth.block2Data, Settings::blockSize);
 
     // Stage 3: Send the block 2 Contents to the trust organization for validation.
@@ -297,7 +315,7 @@ Transmitter::UserData Transmitter::readPICC()
     //  Send block 2 address data.
     Serial.write(m_blockAuth.block2Data, Settings::blockSize);
 
-    // Request the secret key sent from the trust organization. A default of 
+    // Request the secret key sent from the trust organization. A default of
     // 0x00 bytes is preset.
     byte secretKey[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
 
@@ -314,7 +332,7 @@ Transmitter::UserData Transmitter::readPICC()
     // This is only for tests: copy simulated secret key bytes.
     byte tempReadBytes[MFRC522::MF_KEY_SIZE] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
     memcpy(secretKey, tempReadBytes, MFRC522::MF_KEY_SIZE);
-    
+
     // KeyB needs to be computed using the successfully read secret key.
     // KeyA only has read-only permissions to block 2 address while KeyB has both
     // read and write permissions to the whole sector.
@@ -340,10 +358,10 @@ Transmitter::UserData Transmitter::readPICC()
     byte startBlock {0};
     byte addr {m_blockAuth.block0Addr};
 
-    // Serial.println(F(" Tag Serial contents! ")); 
+    // Serial.println(F(" Tag Serial contents! "));
     // dumpBytes(m_rc522.uid.uidByte, m_rc522.uid.size);
 
-    // Serial.println(F(" KeyB contents! ")); 
+    // Serial.println(F(" KeyB contents! "));
     // dumpBytes(m_PiccKeyB.keyByte, MFRC522::MF_KEY_SIZE);
 
     for (;startBlock < blocksToRead && addr < Settings::maxBlockNo; ++addr)
@@ -379,7 +397,7 @@ Transmitter::UserData Transmitter::readPICC()
     else
         setDetailsMsg((char*)"Reading the tag failed. Try another tag!");
 
-    // Serial.println(F(" TrustKey contents reading! ")); 
+    // Serial.println(F(" TrustKey contents reading! "));
     // dumpBytes(data.readData, Settings::dataSize);
 
     return data;
@@ -442,7 +460,7 @@ void Transmitter::networkConn(Transmitter::UserData &cardData)
         memcpy(cardData.readData, txData, Settings::dataSize); // update the new card data
         return;
     }
-    setDetailsMsg((char*)"Network connection failed!");
+    setDetailsMsg((char*)"Network connectivity failed!");
 }
 
 // writePICC writes the provided content to the PICC.
@@ -471,7 +489,7 @@ void Transmitter::writePICC(Transmitter::UserData &cardData)
             break;
     }
 
-    // Serial.println(F(" TrustKey contents writing! ")); 
+    // Serial.println(F(" TrustKey contents writing! "));
     // dumpBytes(cardData.readData, Settings::dataSize);
 
     if (cardData.status == MFRC522::STATUS_OK)
@@ -486,10 +504,6 @@ void Transmitter::writePICC(Transmitter::UserData &cardData)
 void Transmitter::cleanUpAfterCardOps()
 {
     delay(Settings::AUTH_DELAY); // Delay before making another PICC selection.
-
-    // Reset the machine state to standy by indicating that the device is ready
-    // to handle another PICC selected.
-    setState(Transmitter::StandBy);
 
     // Set interrupt as successfully handled.
     resetInterrupt();
@@ -529,6 +543,10 @@ void Transmitter::handleDetectedCard()
         // Handle clean up after the card operations.
         cleanUpAfterCardOps();
     }
+
+    // Reset the machine state to standy by indicating that the device is ready
+    // to handle another PICC selected.
+    setState(Transmitter::StandBy);
 }
 
 // setUidBasedKey replaces the non-uid base key with a Uid based which is
@@ -541,12 +559,12 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
     {
         // card must be new otherwise KeyA and KeyB won't match as specified
         // in the tag's transport configuration from the factory.
-        
+
         // +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
         // | ------------- KEY A -------------- | - ACCESS BITS -  | -GP- | -------------- KEY B ------------- |
         // | 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF | 0xFF, 0x07, 0x80 | 0x00 | 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF |
         // +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-        // Above diagram describes the default transport configuration of the 
+        // Above diagram describes the default transport configuration of the
         // Mifare classics family of tags sector block.
         // Default KeyA = 0xFF FF FF FF FF FFh.
         // Default KeyB = 0xFF FF FF FF FF FFh.
@@ -596,7 +614,7 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
         if (status == MFRC522::STATUS_OK)
             status = m_rc522.MIFARE_Write(
                 sectorTrailer,
-                keyBuffer, 
+                keyBuffer,
                 Settings::blockSize
             );
 
@@ -604,9 +622,9 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
         // Serial.println(m_rc522.GetStatusCodeName(status));
 
         if (status == MFRC522::STATUS_OK)
-            setDetailsMsg((char*)"Upgrading key config was successful!");
+            setDetailsMsg((char*)"Upgrading key config was successful! ");
         else
-            setDetailsMsg((char*)"Upgrading key config failed!");
+            setDetailsMsg((char*)"Upgrading key config failed! ");
     }
 
     return status;

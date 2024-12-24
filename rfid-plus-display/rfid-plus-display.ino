@@ -41,7 +41,7 @@ void runSerialPassthrough()
     if (serialEventRun) serialEventRun();
 }
 
-// handleInterrupt sets that an interrupt has been detected allowing it to be 
+// handleInterrupt sets that an interrupt has been detected allowing it to be
 // responded to immediately.
 void handleInterrupt() {  onInterrupt = true; }
 
@@ -63,7 +63,7 @@ int main(void)
     const uint8_t LCD_D6 {7};
     const uint8_t LCD_D7 {6};
 
-    // PCD Transmitter Pins 
+    // PCD Transmitter Pins
     const uint8_t RFID_RST {22}; // A4 Pin
     const uint8_t RFID_SS {23};  // A5 Pin
     const uint8_t RFID_IRQ {2}; // Interrupt pin
@@ -93,22 +93,22 @@ int main(void)
 
     // Machine has successfully booted up thus can be moved to the Standby State.
     rfid.setState(Transmitter::StandBy);
-    
+
 	for(;;) {
         // Print to the display
         rfid.printScreen();
 
         // Handle the interrupt if it has been detected.
         if (onInterrupt) rfid.handleDetectedCard();
-       
+
         runSerialPassthrough();
 
         // RFID module is requested to transmit it data so that the microcontroller
-        // can confirm if there is an interrupt to be handled. 
+        // can confirm if there is an interrupt to be handled.
         rfid.activateTransmission();
 
         delay(Settings::REFRESH_DELAY);
 	}
-        
+
 	return 0;
 }

@@ -4,7 +4,7 @@
  * @section intro_sec Introduction
  *
  * This file is part rfid-plus-display package files. It is an implementation
- * of the RFID PCD (Proximity Coupled Device) that runs on a adapter customised 
+ * of the RFID PCD (Proximity Coupled Device) that runs on a adapter customised
  * mainly for AVR boards.
  *
  * @section author Author
@@ -26,6 +26,10 @@
 #include <MFRC522.h>
 #include <LiquidCrystal.h>
 
+// IS_TRUST_ORG flag is used to indicate that the current PCD mode allows a trust
+// organization to over write blank memory space if no previous Trust Key exists.
+// #define IS_TRUST_ORG
+
 // onInterrupt is declared as a global variable that is set to true once an
 // interrupt by the RFID module is recorded.
 extern volatile bool onInterrupt;
@@ -37,20 +41,22 @@ namespace Settings
     constexpr long int SERIAL_BAUD_RATE {115200};
 
     // REFRESH_DELAY defines how long it takes to refresh the display when
-    // displaying a scrolling message. 
+    // displaying a scrolling message.
     constexpr int REFRESH_DELAY {700};
 
     // AUTH_DELAY defines the length in ms the systems waits to initiate a new
-    // authentication after the previous one finished. 
+    // authentication after the previous one finished.
     constexpr int AUTH_DELAY {2000};
 
     // keysCount defines the number of default keys to attempt authentication
     // with in new cards.
     constexpr int keysCount {9};
 
+    #ifdef IS_TRUST_ORG
     // defaultPICCKeyAs defines the common/default keys used to access blocks.
+    // THIS KEY SHOULD ONLY BE USED DURING THE Trust Organization MODE ONLY!.
     // https://github.com/nfc-tools/libnfc/blob/0e8cd450e1ad467b845399d55f6322a39c072b44/utils/nfc-mfclassic.c#L82-L92
-    static const MFRC522::MIFARE_Key defaultPICCKeyAs[keysCount] 
+    static const MFRC522::MIFARE_Key defaultPICCKeyAs[keysCount]
     {
         {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, // FF FF FF FF FF FF = factory default
         {0xd3, 0xf7, 0xd3, 0xf7, 0xd3, 0xf7}, // D3 F7 D3 F7 D3 F7
@@ -62,9 +68,10 @@ namespace Settings
         {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // 00 00 00 00 00 00
         {0xab, 0xcd, 0xef, 0x12, 0x34, 0x56}, // AB CD EF 12 34 56
     };
+    #endif
 
     // KeyA defines the default hardcoded key that has read only to read block 2
-    // contents in a trust key sector during the first pass of the 
+    // contents in a trust key sector during the first pass of the
     // authentication process. i.e (DA 91 E7 A4 3B 42)
     static const MFRC522::MIFARE_Key KeyA = {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42};
 
@@ -113,7 +120,7 @@ namespace Settings
 
     // dataSize defines the total size in bytes that stores the authentication
     // data. The data to be read is supposed to be 384 bits long, translating
-    // to 384/8 = 48 bytes. Since each block is of 16 bytes memory capacity, 
+    // to 384/8 = 48 bytes. Since each block is of 16 bytes memory capacity,
     // then 3 consecutive blocks will be adequate to store 384 bit/ 48 bytes.
     constexpr byte dataSize{48};
 };
@@ -129,7 +136,7 @@ class Display
            byte index; // tracks the cursor position.
         } Msg;
 
-        // Initializes the LCD library and set it to operate using 7 GPIO pins 
+        // Initializes the LCD library and set it to operate using 7 GPIO pins
         // under the 4-bit mode.
         Display(
             byte RST, byte RW, byte EN,  // Control Pins
@@ -150,10 +157,10 @@ class Display
         // supported can be scrolled from right to left.
         void printScreen();
 
-        // print outputs the content on the display. It also manages scrolling 
+        // print outputs the content on the display. It also manages scrolling
         // if the character count is greater than the LCD can display at a go.
         void print(Msg &data, byte col, byte line);
-    
+
     protected:
         // maxColumns defines the number of columns that the LCD supports.
         // (Top to Bottom)
@@ -166,12 +173,12 @@ class Display
         LiquidCrystal m_lcd;
 
         // m_statusMsg defines the text and cursor position of the message
-        // displayed on Row 1.
-        Msg m_statusMsg {};
+        // displayed on Row 1. Allocated less bytes as less/no scrolling is needed.
+        Msg m_statusMsg{new char[20]{}, 0};
 
         // m_detailsMsg defines the text and cursor position of the message
         // displayed on Row 2.
-        Msg m_detailsMsg {};
+        Msg m_detailsMsg{new char[50]{}, 0};
 };
 
 // Transmitter manages the Proximity Coupling Device (PCD) interface.
@@ -182,7 +189,7 @@ class Transmitter: public Display
         // between during its normal operation.
         enum MachineState {
             // BootUp State is the initial state set on device power On.
-            BootUp, 
+            BootUp,
             // StandBy State is the Idle State when waiting for tag(s) to read/write.
             StandBy,
             // ReadTag State is set on tag detection where authentication and
@@ -213,13 +220,13 @@ class Transmitter: public Display
 
 
         // UserData defines the type of data expected after a successful read or write.
-        typedef struct 
+        typedef struct
         {
             MFRC522::StatusCode status;
             byte readData[Settings::dataSize];
         } UserData;
 
-        
+
         Transmitter(
             byte RFID_SS, byte RFID_RST, // RFID control pins
             byte LCD_RST, byte LCD_RW, byte LCD_EN,  // LCD Control Pins
@@ -266,7 +273,7 @@ class Transmitter: public Display
         void handleDetectedCard();
 
         // stateToStatus returns the string version of each state translated to
-        // its corresponding status message. 
+        // its corresponding status message.
         char* stateToStatus(MachineState& state) const;
 
         // setState updates the state of the device.
@@ -312,7 +319,7 @@ class Transmitter: public Display
         MFRC522::MIFARE_Key m_PiccKeyB;
 
         // activateIRQ defines the register value to be set activating the
-        // IRQ pin as an interrupt. Sets interrupts to be active Low and only 
+        // IRQ pin as an interrupt. Sets interrupts to be active Low and only
         // allows the receiver interrupt request (RxIRq).
         static const byte activateIRQ {0xA0};
         // handledInterrupt defines the register value to be set indicating that
