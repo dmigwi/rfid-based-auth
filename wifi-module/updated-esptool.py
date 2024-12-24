@@ -2979,8 +2979,12 @@ def write_flash(esp, args):
         seq = 0
         written = 0
         t = time.time()
+        print('Writing.', end='')
         while len(image) > 0:
-            print_overwrite('Writing at 0x%08x... (%d %%)' % (address + seq * esp.FLASH_WRITE_SIZE, 100 * (seq + 1) // blocks))
+            progress = 100 * (seq + 1) // blocks
+            if (progress % 5) == 0:
+                print('.', end='') # Prints less progress data on software upload.
+                # print_overwrite('Writing at 0x%08x... (%d %%)' % (address + seq * esp.FLASH_WRITE_SIZE, progress))
             sys.stdout.flush()
             block = image[0:esp.FLASH_WRITE_SIZE]
             if args.compress:
@@ -2996,6 +3000,7 @@ def write_flash(esp, args):
             seq += 1
             written += len(block)
         t = time.time() - t
+        print('.')
         speed_msg = ""
         if args.compress:
             if t > 0.0:
