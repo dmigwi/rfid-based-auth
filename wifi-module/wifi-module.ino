@@ -51,6 +51,7 @@ namespace Settings
     // following configuration is used:
     const char* AP_SSID {"RFID-based-Auth"};
     const char* AP_Password  {"Adm1n$tr8oR"};
+
     // WiFi_Hostname defines part of the WiFi hostname. The full name with
     // "RFID_AUTH_24xMac" where "24xMac" represents the last 24 bits of the mac address.
     const char* WiFi_Hostname {"RFID_AUTH"};
@@ -66,8 +67,13 @@ namespace Settings
     // SERVER_API_URL defines the URL to which the HTTP client will make API calls to.
     const char* SERVER_API_URL {"http://dmigwi.atwebpages.com/auth/time.php"};
 
-    const byte MAX_SSID_LEN {32}; // A max of 32 characters allowed.
-    const byte MAX_PASS_LEN {64}; // A max of 64 characters allowed.
+    // MAX_SSID_LEN defines the maximum characters allowed for a wifi name.
+    // A total of 31 characters + the null teminitor are allowed.
+    const byte MAX_SSID_LEN {32};
+
+    // MAX_PASS_LEN defines the maximu characters allowed for a wifi password.
+    // A total of 63 characters + the null terminitor are allowed.
+    const byte MAX_PASS_LEN {64};
 
     // Delay Timeout is set to 1 minute (6000ms) after which, the network
     // connection attempts are aborted.
@@ -84,6 +90,10 @@ namespace Settings
     // settings but have different pins for the builtin LED. Select Builtin
     // Led:1 for the ESP-01 and Builtin Led:2 for the ESP-01S
     const byte LED {2};
+
+    // blinksCount defines the number of consecutive blinks of the builtin
+    // led that are used to indicate status change.
+    const byte blinksCount {10};
 
      // AuthInfo defines parameters needed to connect to a WiFi channel.
     typedef struct
@@ -125,10 +135,12 @@ class WebServer
         // is made to (http://rfid_auth.local).
         void handleRoot(void)
         {
+            byte nameLenAllowed {Settings::MAX_SSID_LEN -1 };
+            byte passLenAllowed {Settings::MAX_PASS_LEN -1 };
             char buffer[1500];  // Preallocate a large chunk to avoid memory fragmentation
-            sprintf(buffer, rootContent, m_authKeys.WiFiName, Settings::MAX_SSID_LEN,
-                Settings::MAX_SSID_LEN, m_authKeys.password, Settings::MAX_PASS_LEN,
-                Settings::MAX_PASS_LEN);
+            sprintf(buffer, rootContent,
+                    m_authKeys.WiFiName, nameLenAllowed, nameLenAllowed,
+                    m_authKeys.password, passLenAllowed, passLenAllowed );
             m_server.send(200, "text/html", buffer);
         }
 
@@ -147,7 +159,7 @@ class WebServer
             delay(Settings::REFRESH_DELAY);
 
             #ifdef DEBUG
-            Serial.println(F("Shutting the EEPROM Interface!"));
+            Serial.println(F("Shutting down the EEPROM Interface!"));
             #endif
             // Shutdown the EEPROM Interface
             EEPROM.end();
@@ -179,11 +191,14 @@ class WebServer
 
                 if (ssid.length() > 0 && pwd.length() > 0)
                 {
-                    ssid.toCharArray(m_authKeys.WiFiName, pwd.length()+1); // set the ssid string to the struct.
-                    pwd.toCharArray(m_authKeys.password, ssid.length()+1); // set the pwd string to the struct.
+                    // Sets the ssid & pwd strings to the struct. +1 because length()
+                    // assumes last character in the string is null terminitor
+                    // but it is not.
+                    ssid.toCharArray(m_authKeys.WiFiName, ssid.length()+1);
+                    pwd.toCharArray(m_authKeys.password, pwd.length()+1);
 
                     // Update the EEPROM with the latest settings.
-                    EEPROM.put(Settings::STORAGE_ADDRESS, m_authKeys.password);
+                    EEPROM.put(Settings::STORAGE_ADDRESS, m_authKeys);
                     // Commit the EEPROM Changes.
                     EEPROM.commit();
 
@@ -230,7 +245,7 @@ class WebServer
             m_server.begin();
 
             #ifdef DEBUG
-            Serial.println("HTTP server started");
+            Serial.println("Local http server started!");
             #endif
         }
 
@@ -337,8 +352,8 @@ class WiFiConfig
             Serial.println("Station WiFi Mode Active");
             #endif
 
-            // blink 5 times to indicate that WiFi connectivity is working as expected.
-            for (int i{0}; i<5; i++)
+            // blink several times to indicate that WiFi connectivity is working as expected.
+            for (byte i{0}; i < Settings::blinksCount; i++)
                 blinkBuiltinLED(Settings::REFRESH_DELAY);
         }
 
@@ -361,7 +376,6 @@ class WiFiConfig
             #ifdef DEBUG
             Serial.println(F("\n Establishing Station Mode Connection!"));
             Serial.println(F(" Attempting connection to the external AP!"));
-
             Serial.printf(" SSID: '%s' \n Password: '%s' \n Device ID: %s \n",
                 m_settings.WiFiName, m_settings.password, WiFi.hostname().c_str()
             );
@@ -472,7 +486,8 @@ void setup()
     config.setUpConfig(); // Set up Device ID and EEPROM
     config.printChipVersion();  // Log the chip version in debug mode
 
-    for (int i {0}; i<5; ++i)  // Delay to allow the serial interface to be ready..
+    // Delay to allow the serial interface to be ready..
+    for (byte i {0}; i < Settings::blinksCount; ++i)
         blinkBuiltinLED(Settings::REFRESH_DELAY);
 
     digitalWrite(Settings::LED, LOW); // Turn off the LED after blinking

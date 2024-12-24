@@ -52,6 +52,7 @@ $(UPLOAD_OP).$(ESP_TARGET):  $(ESP_TARGET) $(OBJ)
 # Following the bug fixes described here:
 # https://github.com/espressif/esptool/issues/972#issuecomment-2054169803
 # the default esptool.py file must be replaced with updated-esptool.py file.
+# make esptool should only be run after make compile.esp.
 $(ESP_TOOL_TARGET): $(ESP_TARGET)
 	@echo "==> Replacing the default esptool.py file with updated-esptool.py contents"
 	cp $(WORKING_DIR)/updated-esptool.py $(ESP_TOOL_PATH)
