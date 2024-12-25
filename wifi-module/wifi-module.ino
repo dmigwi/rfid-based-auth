@@ -134,19 +134,20 @@ namespace Settings
     // 48 bytes => Trust Key Data
     // 1 byte => size of the rest of data size expected.
     // In total 68 bytes should be transmitted via the serial communication.
-    constexpr int TRUST_KEY_DATA_SIZE {68};
+    // Since the first byte is read separately, subtract 1 to get 67 bytes.
+    constexpr int TRUST_KEY_DATA_SIZE {67};
 
     // MAX_REQ_SIZE the maximum size of the data from the serial communication
     // can be read into contagious memory location.
     constexpr int MAX_REQ_SIZE {72};
 
-    // // ***** TESTS DATA ONLY****
-    // static const byte testData[] = {
-    //     0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44, 0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE,
-    //     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    //     0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12,
-    // };
-    // static const byte secretKey[] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
+    // ***** TESTS DATA ONLY****
+    static const byte testData[] = {
+        0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44, 0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12,
+    };
+    static const byte secretKey[] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
 };
 
 // SoftwareSerial espSerial(Settings::RX, Settings::TX);
@@ -556,21 +557,27 @@ class WiFiConfig
                 int bufferSize = Serial.read();
 
                 int readBytes {0};
-                for (; readBytes < bufferSize && Serial.available() > 0; ++readBytes)
-                    m_requestBuffer[readBytes] = Serial.read();
+                while (Serial.available() > 0)
+                {
+                    if (readBytes < Settings::MAX_REQ_SIZE && readBytes < bufferSize)
+                        m_requestBuffer[readBytes++] = Serial.read();
+                    else
+                        Serial.read(); // just empty the buffer.
+                }
+
 
                 switch(bufferSize)
                 {
                     case Settings::BLOCK_2_DATA_SIZE:
-                        // Serial.write(Settings::secretKey, sizeof(Settings::secretKey));
-                        // break;
+                        Serial.write(Settings::secretKey, sizeof(Settings::secretKey));
+                        break;
                     case Settings::TRUST_KEY_DATA_SIZE:
-                        // Serial.write(Settings::testData, sizeof(Settings::testData));
+                        Serial.write(Settings::testData, sizeof(Settings::testData));
 
                         // Ensure the read bytes and expected bytes match otherwise data read is invalid
-                        handleHttpEvents(bufferSize, bufferSize==readBytes);
+                        // handleHttpEvents(bufferSize, bufferSize==readBytes);
 
-                        Serial.flush(); //Clearing all Serial print
+                        // Serial.flush(); //Clearing all Serial print
                         break;
                     default:
                         // Invalid first byte about data size found.

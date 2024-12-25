@@ -69,7 +69,7 @@ int main(void)
 
     delay(Settings::REFRESH_DELAY); // Prepare to move machine to standby state.
 
-    Serial.setTimeout(3000); // Wait for at least 3 secs.
+    Serial.setTimeout(5000); // Wait for at least 5 secs.
 
     // Machine has successfully booted up thus can be moved to the Standby State.
     rfid.setState(Transmitter::StandBy);

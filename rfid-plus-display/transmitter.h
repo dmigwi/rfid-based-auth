@@ -36,7 +36,8 @@ extern volatile bool onInterrupt;
 
 namespace Settings
 {
-    constexpr byte DEVICE_ID[] {0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE};
+    // TODO: A more easier approach to update it should be implemented.
+    constexpr byte DEVICE_ID[] {0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12};
 
     // SERIAL_BAUD_RATE defines the data communication rate to be used during
     // serial communication.
@@ -48,7 +49,7 @@ namespace Settings
 
     // AUTH_DELAY defines the length in ms the systems waits to initiate a new
     // authentication after the previous one finished.
-    constexpr int AUTH_DELAY {2000};
+    constexpr int AUTH_DELAY {5000};
 
     // keysCount defines the number of default keys to attempt authentication
     // with in new cards.
@@ -150,7 +151,7 @@ class Display
         // setStatusMsg set the status message that is to be displayed on Row 1.
         // This message is mostly concise with clear message and doesn't require
         // scrolling.
-        void setStatusMsg(char* data, bool displayNow);
+        void setStatusMsg(char* data, bool displayNow, bool isClear);
 
         // setDetailsMsg sets the details message that is to be displayed on Row 2.
         // This message is usually a longer explanation of the status message and
@@ -178,11 +179,11 @@ class Display
 
         // m_statusMsg defines the text and cursor position of the message
         // displayed on Row 1. Allocated less bytes as less/no scrolling is needed.
-        Msg m_statusMsg{new char[20]{}, 0};
+        Msg m_statusMsg{new char[30]{}, 0};
 
         // m_detailsMsg defines the text and cursor position of the message
         // displayed on Row 2.
-        Msg m_detailsMsg{new char[50]{}, 0};
+        Msg m_detailsMsg{new char[80]{}, 0};
 };
 
 // Transmitter manages the Proximity Coupling Device (PCD) interface.
@@ -256,15 +257,15 @@ class Transmitter: public Display
         MFRC522::StatusCode setUidBasedKey();
 
         // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
-        UserData readPICC();
+        void readPICC();
 
         // networkConn establishes Connection to the wifi Module via a serial communication.
         // The WIFI module then connects to the validation server where the PICC
         // card data is validated.
-        void networkConn(UserData &data);
+        void networkConn();
 
         // writePICC writes the provided content to the PICC.
-        void writePICC(UserData &data);
+        void writePICC();
 
         // ccleanUpAfterCardOps undertake reset operation back to the standby
         // state after the read, network connection and write operation
@@ -315,6 +316,8 @@ class Transmitter: public Display
         MachineState m_state {BootUp};
 
         BlockAuth m_blockAuth{};
+
+        UserData m_cardData{};
 
         // m_PiccKeyB defines the key that is generated from the card's uid.
         // It is more safer and easier to use than that the other default keys

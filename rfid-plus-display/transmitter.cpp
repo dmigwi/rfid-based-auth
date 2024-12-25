@@ -22,15 +22,16 @@
 // Assigns the global variable an initial value of false.
 volatile bool onInterrupt {false};
 
-// dumpBytes dumps the buts on the serial output.
-void dumpBytes(byte* data, byte count)
-{
-     for (byte i = 0; i < count; i++) {
-            Serial.print(data[i], HEX);
-            Serial.print(F(" "));
-        }
-        Serial.println();
-}
+// ****Function used for debug purposes Only!****
+// // dumpBytes dumps the buts on the serial output.
+// void dumpBytes(byte* data, byte count)
+// {
+//      for (byte i = 0; i < count; i++) {
+//             Serial.print(data[i], HEX);
+//             Serial.print(F(" "));
+//         }
+//         Serial.println();
+// }
 
 ///////////////////////////////////////////////////
 // Display Class Members
@@ -52,16 +53,20 @@ Display::Display(
 // This message is mostly concise with clear message and doesn't require
 // scrolling. The displayNow option defaults to false unless specified
 // as true.
-void Display::setStatusMsg(char* data, bool displayNow = false)
+void Display::setStatusMsg(char* data, bool displayNow = false, bool isClear = false)
 {
     // If content mismatch, clean up the screen before printing the new content.
     strcpy(m_statusMsg.text, data);
     m_statusMsg.index = 0;
     m_detailsMsg.index = 0;
 
+    if (isClear)
+        m_lcd.clear();
+
     // Triggers immediate screen update if true.
     if (displayNow)
         printScreen();
+
 }
 
 // setDetailsMsg sets the details message that is to be displayed on Row 2.
@@ -71,7 +76,7 @@ void Display::setStatusMsg(char* data, bool displayNow = false)
 void Display::setDetailsMsg(char* data, bool displayNow = true)
 {
     // If content mismatch, clean up the screen before printing the new content.
-    strcpy(m_detailsMsg.text, strcat(data, "  ")); // new text used by display
+    strcpy(m_detailsMsg.text, data); // new text used by display
     m_detailsMsg.index = 0;
 
     // Triggers immediate screen update if true.
@@ -94,8 +99,8 @@ void Display::printScreen()
 // if the character count is greater than the LCD can display at a go.
 void Display::print(Msg &msg, byte col, byte line)
 {
-    byte allTextLen { strlen(msg.text) };
-    byte viewTextlen { allTextLen };
+    int allTextLen { static_cast<int>(strlen(msg.text)) };
+    int viewTextlen { allTextLen };
 
     // Empty view text created with null terminator accounted for.
     char viewTxt[maxColumns+1] = {'\0'};
@@ -141,7 +146,7 @@ Transmitter::Transmitter(
 {
     // Display the bootup welcome message.
     setState(Transmitter::BootUp);
-    setDetailsMsg((char*)"The weather today is too cold for me (:!");
+    setDetailsMsg((char*)"The weather today is too cold for me (:!  ");
 
     SPI.begin();            // Init SPI bus.
     m_rc522.PCD_Init();     // Init MFRC522 Library.
@@ -167,7 +172,7 @@ char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
         case BootUp:
             return (char*)"Hello, Warszawa!"; // Welcome Message. (16 chars + \0)
         case StandBy:
-            return (char*)"Tag Waiting...  "; // Waiting for a tag. (16 chars + \0)
+            return (char*)"Scan a Tag...   "; // Waiting for a tag. (16 chars + \0)
         case ReadTag:
             return (char*)"Tag Reading...  "; // Reading the tag. (16 chars + \0)
         case Network:
@@ -185,7 +190,7 @@ void Transmitter::setState(Transmitter::MachineState state)
 {
     m_state = state;
     char* status {stateToStatus(state)};
-    setStatusMsg(status);
+    setStatusMsg(status, false, state==StandBy); // Reset on Standby Mode always.
 }
 
 // setPICCAuthKeyB generates the KeyB authentication bytes from XORing a
@@ -266,10 +271,9 @@ void Transmitter::attemptBlock2Auth(Transmitter::BlockAuth& auth, MFRC522::MIFAR
 }
 
 // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
-Transmitter::UserData Transmitter::readPICC()
+void Transmitter::readPICC()
 {
-    UserData data {};
-    data.status = MFRC522::STATUS_ERROR; // set default status to error.
+    m_cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
     m_blockAuth.status = MFRC522::STATUS_ERROR; // set default status to error.
 
     // Stage 1: Activate the Card (Request + Anticollision + Select)
@@ -277,7 +281,7 @@ Transmitter::UserData Transmitter::readPICC()
 
     // A Tag has been detected thus the machines state is updated to read tag state.
     setState(Transmitter::ReadTag);
-    setDetailsMsg((char*)"Init authentication to validate key!");
+    setDetailsMsg((char*)"Init authentication to validate key!  ");
 
     // Stage 2: Attempt Authentication using KeyA and read block 2 address contents
     // if successful.
@@ -301,8 +305,8 @@ Transmitter::UserData Transmitter::readPICC()
 
     if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
-        setDetailsMsg((char*)"KeyA validity failed. Try another tag!");
-        return data;
+        setDetailsMsg((char*)"KeyA validity failed. Try another tag!  ");
+        return;
     }
 
     // dataSent is bundled together with the data size and actual data in one array.
@@ -330,8 +334,8 @@ Transmitter::UserData Transmitter::readPICC()
     byte bytesRead { static_cast<byte>(Serial1.readBytes(secretKey, MFRC522::MF_KEY_SIZE))};
     if (bytesRead != MFRC522::MF_KEY_SIZE)
     {
-        setDetailsMsg((char*)"Fetching the Secret Key failed. Try another tag!");
-        return data;
+        setDetailsMsg((char*)"Fetching the Secret Key failed. Try another tag!  ");
+        return;
     }
 
     // KeyB needs to be computed using the successfully read secret key.
@@ -345,11 +349,11 @@ Transmitter::UserData Transmitter::readPICC()
     byte lastValidBlock {(byte)(m_blockAuth.block0Addr + blocksToRead)};
 
     if (lastValidBlock <= Settings::maxBlockNo)
-        setDetailsMsg((char*)"Initiating tag reading to extract data!");
+        setDetailsMsg((char*)"Initiating data extraction from the tag!  ");
     else
     {
-        setDetailsMsg((char*)"Tag blocks are full. Try another tag!");
-        return data;
+        setDetailsMsg((char*)"Tag blocks are full. Try another tag!  ");
+        return;
     }
 
     // Reads 16 bytes (+ 2 bytes CRC_A) from the active PICC.
@@ -366,46 +370,44 @@ Transmitter::UserData Transmitter::readPICC()
 
         // authenticate each block before attempting a read operation.
         // If the card is new, use either KeyA or KeyB as they are similar otherwise use Tag Specific KeyB.
-        data.status = m_rc522.PCD_Authenticate(
+        m_cardData.status = m_rc522.PCD_Authenticate(
             MFRC522::PICC_CMD_MF_AUTH_KEY_B,                                // authenticate with Key B
             addr,                                                           // data block number
             (m_blockAuth.isCardNew ? &m_blockAuth.authKeyA : &m_PiccKeyB),  // KeyB already preset
             &(m_rc522.uid)                                                  // Selected Card Uid
         );
 
-        if (data.status != MFRC522::STATUS_OK)
+        if (m_cardData.status != MFRC522::STATUS_OK)
             break; // break on block authentication failure
 
-        data.status = m_rc522.MIFARE_Read(addr, buffer, &byteCount);
-        if (data.status != MFRC522::STATUS_OK)
+        m_cardData.status = m_rc522.MIFARE_Read(addr, buffer, &byteCount);
+        if (m_cardData.status != MFRC522::STATUS_OK)
             break; // break on read authentication failure
 
         byteCount = sizeof(buffer); // reset the buffer count.
 
         // copy the read data without the 2 bytes of CRC_A.
-        memcpy(data.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
+        memcpy(m_cardData.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
     }
 
-    if (data.status == MFRC522::STATUS_OK)
-        setDetailsMsg((char*)"Tag reading operation was successful!");
+    if (m_cardData.status == MFRC522::STATUS_OK)
+        setDetailsMsg((char*)"Tag reading was successful!  ");
     else
-        setDetailsMsg((char*)"Reading the tag failed. Try another tag!");
-
-    return data;
+        setDetailsMsg((char*)"Reading the tag failed. Try another tag!  ");
 }
 
 // networkConn establishes Connection to the wifi Module via a serial communication.
 // The WIFI module then connects to the validation server where the PICC
 // card data is validated.
-void Transmitter::networkConn(Transmitter::UserData &cardData)
+void Transmitter::networkConn()
 {
 
-    cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
+    m_cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
 
     // With data read from the tag, connection to the validation server is established.
     setState(Transmitter::Network);
-    setDetailsMsg((char*)"Initiating network connection!");
+    setDetailsMsg((char*)"Initiating network connection!  ");
 
     // Data sent to the WIFI module should be in the following format:
     // 1 byte => UID size, either of (4/7/10)
@@ -419,10 +421,14 @@ void Transmitter::networkConn(Transmitter::UserData &cardData)
 
     byte txData[bytesToSend];
     txData[0] = bytesToSend - 1; // subtract its self as byte zero is read separately
-    memcpy(txData+1, cardData.readData, Settings::dataSize); // copy Trusk Key data.
+    memcpy(txData+1, m_cardData.readData, Settings::dataSize); // copy Trusk Key data.
     memcpy(txData+9, Settings::DEVICE_ID, sizeOfDeviceID); // Copy the Device ID
     memcpy(txData+Settings::dataSize+1, m_rc522.uid.uidByte, 10); // copy card uid.
     txData[Settings::dataSize+10+1] = m_rc522.uid.size; // copy card uid size.
+
+    // Serial.println(F(" TrustKey validation contents! "));
+    // Serial.println(bytesToSend);
+    // dumpBytes(txData, bytesToSend);
 
     // Make the serial transfer of the complete data.
     {
@@ -431,11 +437,10 @@ void Transmitter::networkConn(Transmitter::UserData &cardData)
             Serial1.read(); // reads till the buffer is empty.
 
         Serial1.write(txData, bytesToSend); // Write the data into the serial transmission.
-        Serial1.flush(); // Wait for the transmission of outgoing serial data to complete.
     }
 
     // read the bytes sent back from the WIFI module.
-    size_t bytesRead = Serial.readBytes(txData, Settings::dataSize);
+    size_t bytesRead {Serial1.readBytes(txData, Settings::dataSize)};
 
     // For a successful Network Data read:
     // 1. Bytes read must match the match the size of a trust key.
@@ -443,26 +448,25 @@ void Transmitter::networkConn(Transmitter::UserData &cardData)
     if (bytesRead == Settings::dataSize)
     {
         byte returnedDeviceID[sizeOfDeviceID];
-        memcpy(returnedDeviceID, txData+32, sizeOfDeviceID); // copy device uid.
-        int match = memcmp(returnedDeviceID, Settings::DEVICE_ID, sizeOfDeviceID);
-        if (match == 0)
+        memcpy(returnedDeviceID, txData+40, sizeOfDeviceID); // copy device uid.
+
+        if (memcmp(returnedDeviceID, Settings::DEVICE_ID, sizeOfDeviceID) == 0)
         {
-            setDetailsMsg((char*)"Network connection was successful!");
-            cardData.status = MFRC522::STATUS_OK; // update status
-            memcpy(cardData.readData, txData, Settings::dataSize); // update the new card data
+            setDetailsMsg((char*)"Network connection was successful!  ");
+            m_cardData.status = MFRC522::STATUS_OK; // update status
+            memcpy(m_cardData.readData, txData, Settings::dataSize); // update the new card data
             return;
         }
     }
-
-    setDetailsMsg((char*)"Network connectivity failed!");
+    setDetailsMsg((char*)"Network connectivity failed!  ");
 }
 
 // writePICC writes the provided content to the PICC.
-void Transmitter::writePICC(Transmitter::UserData &cardData)
+void Transmitter::writePICC()
 {
     // With data returned from the validation server, PICC can be written.
     setState(Transmitter::WriteTag);
-    setDetailsMsg((char*)"Initiating tag writing operation!");
+    setDetailsMsg((char*)"Initiating tag writing operation!  ");
 
     byte blocksToRead {Settings::dataSize/Settings::blockSize};
     byte buffer[Settings::blockSize];
@@ -475,21 +479,21 @@ void Transmitter::writePICC(Transmitter::UserData &cardData)
         if ((addr + 1) % Settings::sectorBlocks == 0)
             continue; // Ignore access bit configuration block.
 
-        memcpy(cardData.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
+        memcpy(m_cardData.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
 
-        cardData.status = m_rc522.MIFARE_Write(addr, buffer, Settings::blockSize);
-        if (cardData.status != MFRC522::STATUS_OK)
+        m_cardData.status = m_rc522.MIFARE_Write(addr, buffer, Settings::blockSize);
+        if (m_cardData.status != MFRC522::STATUS_OK)
             break;
     }
 
     // Serial.println(F(" TrustKey contents writing! "));
-    // dumpBytes(cardData.readData, Settings::dataSize);
+    // dumpBytes(m_cardData.readData, Settings::dataSize);
 
-    if (cardData.status == MFRC522::STATUS_OK)
-        setDetailsMsg((char*)"Tag writing operation was successful!");
+    if (m_cardData.status == MFRC522::STATUS_OK)
+        setDetailsMsg((char*)"Tag writing was successful!  ");
     else
-        setDetailsMsg((char*)"Writing the tag failed. Try another tag!");
+        setDetailsMsg((char*)"Writing the tag failed. Try another tag!  ");
 }
 
 // cleanUpAfterCardOps undertake reset operation back to the standby
@@ -510,8 +514,6 @@ void Transmitter::cleanUpAfterCardOps()
 
     // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
     m_rc522.PCD_StopCrypto1();
-
-    m_blockAuth = BlockAuth{}; // reset the block authentication information.
 }
 
 // handleDetectedCard on detecting an NFC card within the field, an interrupt
@@ -521,23 +523,23 @@ void Transmitter::handleDetectedCard()
 {
     if (isNewCardDetected())
     {
-        UserData cardData {readPICC()};
+        readPICC();
 
         // Only send the cards data in the reading operation was successful.
-        if (cardData.status == MFRC522::STATUS_OK)
-            networkConn(cardData);
+        if (m_cardData.status == MFRC522::STATUS_OK)
+            networkConn();
 
         // Only write the card data if the network operation was successful.
-        if (cardData.status == MFRC522::STATUS_OK)
-            writePICC(cardData);
+        if (m_cardData.status == MFRC522::STATUS_OK)
+            writePICC();
 
-         if (cardData.status == MFRC522::STATUS_OK)
-            cardData.status = setUidBasedKey(); // Upgrade Key if the card is new.
+        #ifdef IS_TRUST_ORG
+        if (m_cardData.status == MFRC522::STATUS_OK)
+            m_cardData.status = setUidBasedKey(); // Upgrade Key if the card is new.
+        #endif
 
         // Handle clean up after the card operations.
         cleanUpAfterCardOps();
-
-        delete[] cardData.readData; // deallocate this space.
     }
 
     // Reset the machine state to standy by indicating that the device is ready
@@ -550,7 +552,6 @@ void Transmitter::handleDetectedCard()
 // NB: Feature only works in the Trust Organization Mode.
 MFRC522::StatusCode Transmitter::setUidBasedKey()
 {
-
     MFRC522::StatusCode status = MFRC522::STATUS_ERROR;
     #ifdef IS_TRUST_ORG
     if (m_blockAuth.isCardNew)
