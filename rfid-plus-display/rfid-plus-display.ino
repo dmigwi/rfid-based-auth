@@ -19,28 +19,6 @@
 
 #include "transmitter.h"
 
-void runSerialPassthrough()
-{
-    #ifdef ARDUINO_AVR_LEONARDO
-    // SerialPassthrough code is only run when needed.
-    // https://docs.arduino.cc/built-in-examples/communication/SerialPassthrough/
-    // A serial passthrough is necessary because leonardo board doesn't have
-    // a chip dedicated to managing the serial communication via UART protocol.
-    // Copy from virtual serial line to uart and vice versa
-    if (Serial.available()) {
-        while(Serial.available())
-            Serial1.write(Serial.read());
-    }
-
-    if (Serial1.available()) {
-        while(Serial1.available())
-            Serial.write(Serial1.read());
-    }
-    #endif
-
-    if (serialEventRun) serialEventRun();
-}
-
 // handleInterrupt sets that an interrupt has been detected allowing it to be
 // responded to immediately.
 void handleInterrupt() {  onInterrupt = true; }
@@ -91,6 +69,8 @@ int main(void)
 
     delay(Settings::REFRESH_DELAY); // Prepare to move machine to standby state.
 
+    Serial.setTimeout(3000); // Wait for at least 3 secs.
+
     // Machine has successfully booted up thus can be moved to the Standby State.
     rfid.setState(Transmitter::StandBy);
 
@@ -100,8 +80,6 @@ int main(void)
 
         // Handle the interrupt if it has been detected.
         if (onInterrupt) rfid.handleDetectedCard();
-
-        runSerialPassthrough();
 
         // RFID module is requested to transmit it data so that the microcontroller
         // can confirm if there is an interrupt to be handled.

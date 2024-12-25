@@ -126,15 +126,19 @@ namespace Settings
     // the NFC tag's sector with the Trust Key.
     constexpr int BLOCK_2_DATA_SIZE {16};
 
-    // TRUST_KEY_DATA_SIZE defines the size in bytes of the trust key read from
-    // the NFC tag.
-    // [1 byte for UID size (4/7/10)] + [10 bytes card's UID] + [48 bytes Actual data]
-    // In total 59 bytes should be transmitted via the serial communication.
-    constexpr int TRUST_KEY_DATA_SIZE {59};
+    // TRUST_KEY_DATA_SIZE defines the size data expected when validating
+    // a trust key read from the NFC tag.
+    // 1 byte => UID size, either of (4/7/10)
+    // 10 bytes => card's UID Data
+    // 8 bytes => Current PCD's ID
+    // 48 bytes => Trust Key Data
+    // 1 byte => size of the rest of data size expected.
+    // In total 68 bytes should be transmitted via the serial communication.
+    constexpr int TRUST_KEY_DATA_SIZE {68};
 
     // MAX_REQ_SIZE the maximum size of the data from the serial communication
     // can be read into contagious memory location.
-    constexpr int MAX_REQ_SIZE {75};
+    constexpr int MAX_REQ_SIZE {72};
 
     // // ***** TESTS DATA ONLY****
     // static const byte testData[] = {
@@ -562,15 +566,10 @@ class WiFiConfig
                         // break;
                     case Settings::TRUST_KEY_DATA_SIZE:
                         // Serial.write(Settings::testData, sizeof(Settings::testData));
-                        // First byte always defines the size of byte to be expected.
-                        int bufferSize = Serial.read();
-
-                        int readBytes {0};
-                        for (; readBytes < bufferSize && Serial.available() > 0; ++readBytes)
-                            m_requestBuffer[readBytes] = Serial.read();
 
                         // Ensure the read bytes and expected bytes match otherwise data read is invalid
                         handleHttpEvents(bufferSize, bufferSize==readBytes);
+
                         Serial.flush(); //Clearing all Serial print
                         break;
                     default:

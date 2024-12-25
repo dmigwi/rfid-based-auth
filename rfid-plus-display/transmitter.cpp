@@ -150,13 +150,12 @@ Transmitter::Transmitter(
     delay(Settings::REFRESH_DELAY);
 }
 
- // isNewCardDetected returns true for the new card detected and their
+// isNewCardDetected returns true for the new card detected and their
 // respective serial numbers can be read.
 bool Transmitter::isNewCardDetected()
 {
     return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
 }
-
 
 // stateToStatus returns the string version of each state translated to
 // its corresponding status message. A consistent length of 16 characters
@@ -306,32 +305,34 @@ Transmitter::UserData Transmitter::readPICC()
         return data;
     }
 
-    // Serial.println(F(" Block 2 contents! "));
-    // dumpBytes(m_blockAuth.block2Data, Settings::blockSize);
+    // dataSent is bundled together with the data size and actual data in one array.
+    // The first byte is always the data size.
+    const byte bytesToSend {Settings::blockSize + 1};
+    byte dataSent[bytesToSend];
+    dataSent[0] = Settings::blockSize;
+    memcpy(dataSent+1, m_blockAuth.block2Data, Settings::blockSize);
 
     // Stage 3: Send the block 2 Contents to the trust organization for validation.
     // - Use Serial transmission to send the data to and from the WIFI module.
+    {
+        // Before writing into Serial1 cleanup its buffer first.
+        while(Serial1.available() > 0)
+            Serial1.read(); // reads till the buffer is empty.
 
-    //  Send block 2 address data.
-    Serial.write(m_blockAuth.block2Data, Settings::blockSize);
+        // Send block 2 address data and size.
+        Serial1.write(dataSent, bytesToSend);
+    }
 
-    // Request the secret key sent from the trust organization. A default of
-    // 0x00 bytes is preset.
+    // Request the secret key sent from the trust organization.
     byte secretKey[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
 
-    /*
     // Handle narrowing conversion
-    byte bytesRead { static_cast<byte>(Serial.readBytes(secretKey, MFRC522::MF_KEY_SIZE))};
+    byte bytesRead { static_cast<byte>(Serial1.readBytes(secretKey, MFRC522::MF_KEY_SIZE))};
     if (bytesRead != MFRC522::MF_KEY_SIZE)
     {
-        setDetailsMsg((char*)"Error: Fetching the Secret Key failed. Try another tag!");
+        setDetailsMsg((char*)"Fetching the Secret Key failed. Try another tag!");
         return data;
     }
-    */
-
-    // This is only for tests: copy simulated secret key bytes.
-    byte tempReadBytes[MFRC522::MF_KEY_SIZE] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
-    memcpy(secretKey, tempReadBytes, MFRC522::MF_KEY_SIZE);
 
     // KeyB needs to be computed using the successfully read secret key.
     // KeyA only has read-only permissions to block 2 address while KeyB has both
@@ -357,12 +358,6 @@ Transmitter::UserData Transmitter::readPICC()
 
     byte startBlock {0};
     byte addr {m_blockAuth.block0Addr};
-
-    // Serial.println(F(" Tag Serial contents! "));
-    // dumpBytes(m_rc522.uid.uidByte, m_rc522.uid.size);
-
-    // Serial.println(F(" KeyB contents! "));
-    // dumpBytes(m_PiccKeyB.keyByte, MFRC522::MF_KEY_SIZE);
 
     for (;startBlock < blocksToRead && addr < Settings::maxBlockNo; ++addr)
     {
@@ -397,9 +392,6 @@ Transmitter::UserData Transmitter::readPICC()
     else
         setDetailsMsg((char*)"Reading the tag failed. Try another tag!");
 
-    // Serial.println(F(" TrustKey contents reading! "));
-    // dumpBytes(data.readData, Settings::dataSize);
-
     return data;
 }
 
@@ -411,55 +403,57 @@ void Transmitter::networkConn(Transmitter::UserData &cardData)
 
     cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
 
-    /*// for tests only
-    byte testData[] = {
-       0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44, 0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE,
-       0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-       0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12,
-    };
-
-    cardData.status = MFRC522::STATUS_OK; // update status
-    memcpy(cardData.readData, testData, Settings::dataSize);
-    return;*/
-
     // With data read from the tag, connection to the validation server is established.
     setState(Transmitter::Network);
     setDetailsMsg((char*)"Initiating network connection!");
 
-    // Handle Serial transmission to and from the WIFI module.
-    // Data inform of bytes to be sent to/from the WIFI module should be in the
-    // following format:
-    // [1 byte for UID size (4/7/10)] + [10 bytes card's UID] + [48 bytes Actual data]
-    // In total 59 bytes should be transmitted via the serial communication.
+    // Data sent to the WIFI module should be in the following format:
+    // 1 byte => UID size, either of (4/7/10)
+    // 10 bytes => card's UID Data
+    // 8 bytes => Current PCD's ID
+    // 48 bytes => Trust Key Data
+    // 1 byte => size of the rest of data size expected.
+    // In total 68 bytes should be transmitted via the serial communication.
+    const size_t bytesToSend = 20 + Settings::dataSize; // Total 68 bytes
+    const int sizeOfDeviceID {sizeof(Settings::DEVICE_ID)};
 
-    size_t byteCount = Settings::dataSize + 10 + 1;
-    byte txData[byteCount];
-    memcpy(txData, cardData.readData, Settings::dataSize); // copy card actual data.
-    memcpy(txData+Settings::dataSize, m_rc522.uid.uidByte, 10); // copy card uid.
-    txData[Settings::dataSize+10] = m_rc522.uid.size; // copy card uid size.
+    byte txData[bytesToSend];
+    txData[0] = bytesToSend - 1; // subtract its self as byte zero is read separately
+    memcpy(txData+1, cardData.readData, Settings::dataSize); // copy Trusk Key data.
+    memcpy(txData+9, Settings::DEVICE_ID, sizeOfDeviceID); // Copy the Device ID
+    memcpy(txData+Settings::dataSize+1, m_rc522.uid.uidByte, 10); // copy card uid.
+    txData[Settings::dataSize+10+1] = m_rc522.uid.size; // copy card uid size.
 
-    // Write the data into the serial transmission.
-    Serial.write(txData, byteCount);
+    // Make the serial transfer of the complete data.
+    {
+        // Before writing into Serial1 cleanup its buffer first.
+        while(Serial1.available() > 0)
+            Serial1.read(); // reads till the buffer is empty.
+
+        Serial1.write(txData, bytesToSend); // Write the data into the serial transmission.
+        Serial1.flush(); // Wait for the transmission of outgoing serial data to complete.
+    }
 
     // read the bytes sent back from the WIFI module.
-    size_t bytesRead = Serial.readBytes(txData, byteCount);
-
-    byte uidBuffer[10];
-    memcpy(uidBuffer, txData+Settings::dataSize, 10); // copy card uid.
-    int match = memcmp(m_rc522.uid.uidByte, uidBuffer, 10);
+    size_t bytesRead = Serial.readBytes(txData, Settings::dataSize);
 
     // For a successful Network Data read:
-    // 1. Bytes read must match the expected.
-    // 2. Card uid returned must match the existing one.
-    // 3. Byte previously used as size is now used as status code. Status 0 indicates
-    // success otherwise anything else indicates failure.
-    if (byteCount == bytesRead && match == 0 && txData[Settings::dataSize+10] == 0)
+    // 1. Bytes read must match the match the size of a trust key.
+    // 2. Device ID uid returned must match the existing one.
+    if (bytesRead == Settings::dataSize)
     {
-        setDetailsMsg((char*)"Network connection was successful!");
-        cardData.status = MFRC522::STATUS_OK; // update status
-        memcpy(cardData.readData, txData, Settings::dataSize); // update the new card data
-        return;
+        byte returnedDeviceID[sizeOfDeviceID];
+        memcpy(returnedDeviceID, txData+32, sizeOfDeviceID); // copy device uid.
+        int match = memcmp(returnedDeviceID, Settings::DEVICE_ID, sizeOfDeviceID);
+        if (match == 0)
+        {
+            setDetailsMsg((char*)"Network connection was successful!");
+            cardData.status = MFRC522::STATUS_OK; // update status
+            memcpy(cardData.readData, txData, Settings::dataSize); // update the new card data
+            return;
+        }
     }
+
     setDetailsMsg((char*)"Network connectivity failed!");
 }
 
@@ -542,6 +536,8 @@ void Transmitter::handleDetectedCard()
 
         // Handle clean up after the card operations.
         cleanUpAfterCardOps();
+
+        delete[] cardData.readData; // deallocate this space.
     }
 
     // Reset the machine state to standy by indicating that the device is ready
@@ -551,10 +547,12 @@ void Transmitter::handleDetectedCard()
 
 // setUidBasedKey replaces the non-uid base key with a Uid based which is
 // quicker and safer to use. This is done on the cards detected as new.
+// NB: Feature only works in the Trust Organization Mode.
 MFRC522::StatusCode Transmitter::setUidBasedKey()
 {
-    MFRC522::StatusCode status = MFRC522::STATUS_ERROR;
 
+    MFRC522::StatusCode status = MFRC522::STATUS_ERROR;
+    #ifdef IS_TRUST_ORG
     if (m_blockAuth.isCardNew)
     {
         // card must be new otherwise KeyA and KeyB won't match as specified
@@ -589,13 +587,6 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
         // caused by using an LValue in the subtraction.
         byte sectorTrailer {static_cast<byte>(m_blockAuth.block0Addr + Settings::sectorBlocks - 1)};
 
-        // Serial.print(F("Sector block used :"));
-        // Serial.println(sectorTrailer);
-
-        // Serial.println(F("Sector Block Configuration :"));
-        // dumpBytes(keyBuffer, Settings::blockSize);
-        // return;
-
         // authenticate the sector trailer block before attempting a write operation.
         // Consecutive change of the same sector trailer will require KeyB as the
         // modified access bits block KeyA from every accessing the sector trailer block
@@ -607,9 +598,6 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
             &(m_rc522.uid)                      // Selected Card Uid
         );
 
-        // Serial.print(F("MIFARE_Auth Sector trailer auth: "));
-        // Serial.println(m_rc522.GetStatusCodeName(status));
-
         // On successful authentication attempt to write the sector trailer block.
         if (status == MFRC522::STATUS_OK)
             status = m_rc522.MIFARE_Write(
@@ -618,14 +606,12 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
                 Settings::blockSize
             );
 
-        // Serial.print(F("MIFARE_Write Sector trailer reading: "));
-        // Serial.println(m_rc522.GetStatusCodeName(status));
-
         if (status == MFRC522::STATUS_OK)
             setDetailsMsg((char*)"Upgrading key config was successful! ");
         else
             setDetailsMsg((char*)"Upgrading key config failed! ");
     }
+    #endif
 
     return status;
 }

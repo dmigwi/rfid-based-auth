@@ -36,6 +36,8 @@ extern volatile bool onInterrupt;
 
 namespace Settings
 {
+    constexpr byte DEVICE_ID[] {0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE};
+
     // SERIAL_BAUD_RATE defines the data communication rate to be used during
     // serial communication.
     constexpr long int SERIAL_BAUD_RATE {115200};
@@ -75,6 +77,7 @@ namespace Settings
     // authentication process. i.e (DA 91 E7 A4 3B 42)
     static const MFRC522::MIFARE_Key KeyA = {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42};
 
+     #ifdef IS_TRUST_ORG
     constexpr byte accessBitsCount {3};
 
     // AccessBits configure the read and write permissions of each block in a sector.
@@ -84,6 +87,7 @@ namespace Settings
     //     block 2 – data block        |    Read: KeyA/KeyB, Write: KeyA/KeyB
     //     block 3 – sector trailer    |    Read: Never,     Write: Only KeyB
     static const byte AccessBits[accessBitsCount] = {0x4B, 0x44, 0xBB};
+     #endif
 
     // Since all Mifare classics NFC chip have consistent a block organisations
     // between sectors 0 and 16. The read/write operation will only consider the
