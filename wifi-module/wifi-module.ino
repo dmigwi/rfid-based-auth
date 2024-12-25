@@ -32,6 +32,7 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266HTTPClient.h>
+#include <SoftwareSerial.h>
 
 // The text of builtin files are in this header file
 #include "builtinfiles.h"
@@ -64,8 +65,27 @@ namespace Settings
     // during the Access Point mode of the chip.
     const int AP_Server_Port {80};
 
-    // SERVER_API_URL defines the URL to which the HTTP client will make API calls to.
-    const char* SERVER_API_URL {"http://dmigwi.atwebpages.com/auth/time.php"};
+    // ID_SIZE defines the size in bytes of an identifier.
+    constexpr byte ID_SIZE {8};
+
+    // KNOWN_SERVER_IDs defines a list of known servers unique serial identifiers.
+    // It is used to match data recieved with the server that will process it.
+    static const byte KNOWN_SERVER_IDs[][ID_SIZE] = {
+        {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44},
+    };
+
+    // KNOWN_SERVER_APIs defines a list of the known URLs to which the data
+    // received will be matched to it respective API URL.
+    static const char* KNOWN_SERVER_APIs[] =  {
+        {"http://dmigwi.atwebpages.com/auth/time.php"},
+    };
+
+    // ServerIdsCount defines the number known servers IDs in the KNOWN_SERVER_IDs
+    // array of ID. A corresponding entry for known Url should be added at
+    // KNOWN_SERVER_APIs otherwise a client error will occur.
+    constexpr byte ServerIDsCount {
+        (sizeof(Settings::KNOWN_SERVER_IDs) / sizeof(Settings::KNOWN_SERVER_IDs[0]))
+    };
 
     // MAX_SSID_LEN defines the maximum characters allowed for a wifi name.
     // A total of 31 characters + the null teminitor are allowed.
@@ -101,17 +121,44 @@ namespace Settings
         char WiFiName[MAX_SSID_LEN]; // WiFi SSID name
         char password[MAX_PASS_LEN]; // WiFi Auth Password
     } AuthInfo;
+
+    // BLOCK_2_DATA_SIZE defines the size of the block 2 data that is read from
+    // the NFC tag's sector with the Trust Key.
+    constexpr int BLOCK_2_DATA_SIZE {16};
+
+    // TRUST_KEY_DATA_SIZE defines the size in bytes of the trust key read from
+    // the NFC tag.
+    // [1 byte for UID size (4/7/10)] + [10 bytes card's UID] + [48 bytes Actual data]
+    // In total 59 bytes should be transmitted via the serial communication.
+    constexpr int TRUST_KEY_DATA_SIZE {59};
+
+    // MAX_REQ_SIZE the maximum size of the data from the serial communication
+    // can be read into contagious memory location.
+    constexpr int MAX_REQ_SIZE {75};
+
+    // // ***** TESTS DATA ONLY****
+    // static const byte testData[] = {
+    //     0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44, 0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE,
+    //     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    //     0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12,
+    // };
+    // static const byte secretKey[] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
 };
 
+// SoftwareSerial espSerial(Settings::RX, Settings::TX);
 
 // blinkBuiltinLED triggers the LED to toggle on and off.
 void blinkBuiltinLED(int timeout)
 {
     digitalWrite(Settings::LED, (digitalRead(Settings::LED)==HIGH) ? LOW : HIGH);
+    #ifdef DEBUG
     Serial.print(".");
+    #endif
     delay(timeout);
 }
 
+// Webserver manage the local server instance only need to set the credentials
+// to access an external AP.
 class WebServer
 {
     public:
@@ -265,6 +312,21 @@ class WebServer
 class WiFiConfig
 {
     public:
+        enum httpErrorCode {
+            // HTTP_CLIENT_ERROR is the error code the server requests returns as a
+            // http code less than 0 or invalid request size is detected.
+            HTTP_CLIENT_ERROR = 1,
+            // HTTP_SERVER_ERROR is the standard http code with the format 1xx,
+            // 2xx, 3xx, 4xx or 5xx but is not 200 (HTTP_OK_CODE).
+            HTTP_SERVER_ERROR,
+        };
+
+        // Client errors -1 to -11 are defined in the ESP8266HTTPClient.h class.
+        enum httpClientErr {
+            INVALID_TRUST_ORG = -12,
+            INVALID_BUFFER_SIZE = -13,
+        };
+
         // WifiConfig Constructor.
         WiFiConfig() = default;
 
@@ -325,7 +387,9 @@ class WiFiConfig
                     blinkBuiltinLED(Settings::REFRESH_DELAY/2);
 
                 digitalWrite(Settings::LED, HIGH);
+                #ifdef DEBUG
                 Serial.println(".");
+                #endif
 
                 this->printConnectionStatus();
 
@@ -398,6 +462,79 @@ class WiFiConfig
             #endif
         }
 
+        // handleHttpEvents takes the buffer contents provided and submits a
+        // http request to the respective trust organization. On a successful
+        // response the complete payload in send back via serial communication
+        // with a success status otherwise on failure only on bit is sent back
+        // indicating the type of failure
+        void handleHttpEvents(int size, bool isValidSize)
+        {
+            WiFiClient client{};
+            HTTPClient http{};
+
+            #ifdef DEBUG
+            Serial.println("[HTTP] Setting the client config");
+            #endif
+
+            // Negative error codes are used to indicate client error.
+            int httpCode {INVALID_BUFFER_SIZE};
+            int httpErrorCode {0};
+
+            if (isValidSize)
+            {
+                #ifdef DEBUG
+                Serial.println("[HTTP] Identifying the respective Trust Organization");
+                #endif
+
+                // BLOCK_2_DATA has offset of 8 while TRUST_ORG_DATA has 40.
+                byte offset {(size == Settings::BLOCK_2_DATA_SIZE) ? 8 : 40};
+
+                byte serverID[Settings::ID_SIZE] = {};
+                memcpy(serverID, m_requestBuffer+offset, Settings::ID_SIZE);
+
+                for (byte i {0}; i < Settings::ServerIDsCount; ++i)
+                {
+                    if (memcmp(serverID, Settings::KNOWN_SERVER_IDs[i], Settings::ID_SIZE) == 0)
+                    {
+                        // configure the server and url
+                        http.begin(client, Settings::KNOWN_SERVER_APIs[i]);  // HTTP
+                        http.addHeader("Content-Type", "application/json");
+
+                        #ifdef DEBUG
+                        Serial.println("[HTTP] Make a POST Request");
+                        #endif
+
+                        // start connection and send HTTP header and body
+                        httpCode = http.POST(m_requestBuffer, size);
+                        break;
+                    }
+                }
+            }
+
+            if (httpCode < 0) // client error detected.
+            {
+                httpErrorCode = HTTP_CLIENT_ERROR;
+                #ifdef DEBUG
+                Serial.printf("[HTTP] POST... failed, Client Error: %d\n", httpCode);
+                #endif
+            }
+            else // Server error code detected.
+            {
+                httpErrorCode = HTTP_SERVER_ERROR;
+                #ifdef DEBUG
+                Serial.printf("[HTTP] POST... failed, Server Error: %s\n", http.errorToString(httpCode).c_str());
+                #endif
+            }
+
+            // Successful response from the server returned
+            if (httpCode == HTTP_CODE_OK)
+                Serial.print(http.getString().c_str());
+            else
+                Serial.print(httpErrorCode);
+
+            http.end();
+        }
+
         // handleEvents deals with the core serial communication between the Server
         // PCD Serial interface
         void handleEvents()
@@ -406,63 +543,52 @@ class WiFiConfig
             digitalWrite(Settings::LED, HIGH);
 
             // The WiFi connection is active and serial data has been received
-            if (WiFi.status() == WL_CONNECTED && Serial.available()) {
+            if (WiFi.status() == WL_CONNECTED && Serial.available())
+            {
                 // Switch on builtin status light to indicate API connection activity.
                 digitalWrite(Settings::LED, LOW);
 
-                // Read the contents of the serial buffer.
-                size_t bufferSize = Serial.available();
-                char buffer[bufferSize];
-                byte counter = 0;
-                while (Serial.available()) {
-                    buffer[counter] = Serial.read();
-                    counter++;
+                // First byte always defines the size of byte to be expected.
+                int bufferSize = Serial.read();
+
+                int readBytes {0};
+                for (; readBytes < bufferSize && Serial.available() > 0; ++readBytes)
+                    m_requestBuffer[readBytes] = Serial.read();
+
+                switch(bufferSize)
+                {
+                    case Settings::BLOCK_2_DATA_SIZE:
+                        // Serial.write(Settings::secretKey, sizeof(Settings::secretKey));
+                        // break;
+                    case Settings::TRUST_KEY_DATA_SIZE:
+                        // Serial.write(Settings::testData, sizeof(Settings::testData));
+                        // First byte always defines the size of byte to be expected.
+                        int bufferSize = Serial.read();
+
+                        int readBytes {0};
+                        for (; readBytes < bufferSize && Serial.available() > 0; ++readBytes)
+                            m_requestBuffer[readBytes] = Serial.read();
+
+                        // Ensure the read bytes and expected bytes match otherwise data read is invalid
+                        handleHttpEvents(bufferSize, bufferSize==readBytes);
+                        Serial.flush(); //Clearing all Serial print
+                        break;
+                    default:
+                        // Invalid first byte about data size found.
+                        // handleHttpEvents(0, false);
+                        Serial.write(0x01);
                 }
-
-                WiFiClient client{};
-                HTTPClient http{};
-
-                #ifdef DEBUG
-                Serial.println("[HTTP] Setting the client config");
-                #endif
-
-                // configure traged server and url
-                http.begin(client, Settings::SERVER_API_URL);  // HTTP
-                http.addHeader("Content-Type", "application/json");
-
-                #ifdef DEBUG
-                Serial.println("[HTTP] Make a POST Request");
-                #endif
-
-                // start connection and send HTTP header and body
-                int httpCode = http.POST(String(buffer));
-
-                // httpCode will be negative on error
-                if (httpCode > 0) {
-                    // HTTP header has been send and Server response header has been handled
-                    #ifdef DEBUG
-                    Serial.printf("[HTTP] POST... code: %d\n", httpCode);
-                    #endif
-
-                    // file found at server
-                    if (httpCode == HTTP_CODE_OK) {
-                        const String& payload = http.getString();
-                        Serial.println("received payload:\n<<");
-                        Serial.println(payload);
-                        Serial.println(">>");
-                    }
-                } else {
-                    #ifdef DEBUG
-                    Serial.printf("[HTTP] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
-                    #endif
-                }
-
-                http.end();
             }
         }
 
     private:
+        // m_settings hold a copy of the SSID and password values recieved from
+        // the WiFiConfig class.
         Settings::AuthInfo m_settings{};
+
+        // requestBuffer is a reserved contagious memory space where all request
+        // from the serial communication can be read it.
+        byte m_requestBuffer[Settings::MAX_REQ_SIZE];
 };
 
 WiFiConfig config{};
@@ -471,7 +597,10 @@ WiFiConfig config{};
 void setup()
 {
     // Initialize the serial interface.
-    Serial.begin(Settings::SERIAL_BAUD_RATE);
+    Serial.begin(Settings::SERIAL_BAUD_RATE); // Initialize the Arduino serial port
+    Serial1.begin(Settings::SERIAL_BAUD_RATE); // Initialize the ESP8266 serial port
+
+    // Serial.setTimeout(200); // Timeout in 200ms
 
     // Set the GPIO2 Pin as output and set it LOW.
     pinMode(Settings::LED, OUTPUT);
