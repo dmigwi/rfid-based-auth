@@ -26,6 +26,8 @@
 #include <MFRC522.h>
 #include <LiquidCrystal.h>
 
+#include "commonRFID.h"
+
 // IS_TRUST_ORG flag is used to indicate that the current PCD mode allows a trust
 // organization to over write blank memory space if no previous Trust Key exists.
 // #define IS_TRUST_ORG
@@ -36,20 +38,11 @@ extern volatile bool onInterrupt;
 
 namespace Settings
 {
+    // Import the common settings configurations here.
+    using namespace CommonRFID;
+
     // TODO: A more easier approach to update it should be implemented.
     constexpr byte DEVICE_ID[] {0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12};
-
-    // SERIAL_BAUD_RATE defines the data communication rate to be used during
-    // serial communication.
-    constexpr long int SERIAL_BAUD_RATE {115200};
-
-    // REFRESH_DELAY defines how long it takes to refresh the display when
-    // displaying a scrolling message.
-    constexpr int REFRESH_DELAY {700};
-
-    // AUTH_DELAY defines the length in ms the systems waits to initiate a new
-    // authentication after the previous one finished.
-    constexpr int AUTH_DELAY {5000};
 
     // keysCount defines the number of default keys to attempt authentication
     // with in new cards.
@@ -119,15 +112,6 @@ namespace Settings
     //          block 62 – data block
     //          block 63 – sector trailer
     constexpr byte sectorBlocks {4};
-
-    // blockSize defines the size in bytes of one block in a PICC.
-    constexpr byte blockSize{16};
-
-    // dataSize defines the total size in bytes that stores the authentication
-    // data. The data to be read is supposed to be 384 bits long, translating
-    // to 384/8 = 48 bytes. Since each block is of 16 bytes memory capacity,
-    // then 3 consecutive blocks will be adequate to store 384 bit/ 48 bytes.
-    constexpr byte dataSize{48};
 };
 
 // Display manages the relaying the status of the internal workings to the
@@ -195,6 +179,8 @@ class Transmitter: public Display
         enum MachineState {
             // BootUp State is the initial state set on device power On.
             BootUp,
+            // Loading State is when the WIFI configuration is being setup.
+            Loading,
             // StandBy State is the Idle State when waiting for tag(s) to read/write.
             StandBy,
             // ReadTag State is set on tag detection where authentication and
@@ -228,7 +214,7 @@ class Transmitter: public Display
         typedef struct
         {
             MFRC522::StatusCode status;
-            byte readData[Settings::dataSize];
+            byte readData[Settings::TrustKeySize];
         } UserData;
 
 

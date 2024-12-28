@@ -36,17 +36,22 @@
 
 // The text of builtin files are in this header file
 #include "builtinfiles.h"
+#include "commonRFID.h"
 
 // uncomment next line to get debug messages output to Serial link
 // #define DEBUG
 
 namespace Settings
 {
-    // SERIAL_BAUD_RATE defines the speed of communication on the serial interface.
-    const long int SERIAL_BAUD_RATE {115200};
+    // Import the common settings configurations here.
+    using namespace CommonRFID;
 
     // EEPROM_SIZE defines the EEPROM memory size to initialize.
     const int EEPROM_SIZE {320};
+
+    // STORAGE_ADDRESS defines the location where wifi setting will be stored in the
+    // EEPROM storage.
+    const int STORAGE_ADDRESS {0};
 
     // When setting up the AP mode is used to set the Station WiFi settings the
     // following configuration is used:
@@ -65,7 +70,9 @@ namespace Settings
     // during the Access Point mode of the chip.
     const int AP_Server_Port {80};
 
-    // ID_SIZE defines the size in bytes of an identifier.
+    // ID_SIZE defines the size in bytes of an identifier. The trust organization
+    // or the PCD has this reserved space of memory in the block 2 data stored in
+    // an NFC.
     constexpr byte ID_SIZE {8};
 
     // KNOWN_SERVER_IDs defines a list of known servers unique serial identifiers.
@@ -99,13 +106,6 @@ namespace Settings
     // connection attempts are aborted.
     const int CONNECTION_TIMEOUT {60000};
 
-    // REFRESH_DELAY defines the interval at which components are refreshed.
-    const int REFRESH_DELAY {1000};
-
-    // STORAGE_ADDRESS defines the location where wifi setting will be stored in the
-    // EEPROM storage.
-    const int STORAGE_ADDRESS {0};
-
     // ESP-01 and ESP-01S are both programmed using the Generic ESP8266
     // settings but have different pins for the builtin LED. Select Builtin
     // Led:1 for the ESP-01 and Builtin Led:2 for the ESP-01S
@@ -121,25 +121,6 @@ namespace Settings
         char WiFiName[MAX_SSID_LEN]; // WiFi SSID name
         char password[MAX_PASS_LEN]; // WiFi Auth Password
     } AuthInfo;
-
-    // BLOCK_2_DATA_SIZE defines the size of the block 2 data that is read from
-    // the NFC tag's sector with the Trust Key.
-    constexpr int BLOCK_2_DATA_SIZE {16};
-
-    // TRUST_KEY_DATA_SIZE defines the size data expected when validating
-    // a trust key read from the NFC tag.
-    // 1 byte => UID size, either of (4/7/10)
-    // 10 bytes => card's UID Data
-    // 8 bytes => Current PCD's ID
-    // 48 bytes => Trust Key Data
-    // 1 byte => size of the rest of data size expected.
-    // In total 68 bytes should be transmitted via the serial communication.
-    // Since the first byte is read separately, subtract 1 to get 67 bytes.
-    constexpr int TRUST_KEY_DATA_SIZE {67};
-
-    // MAX_REQ_SIZE the maximum size of the data from the serial communication
-    // can be read into contagious memory location.
-    constexpr int MAX_REQ_SIZE {72};
 
     // ***** TESTS DATA ONLY****
     static const byte testData[] = {
@@ -492,7 +473,7 @@ class WiFiConfig
                 #endif
 
                 // BLOCK_2_DATA has offset of 8 while TRUST_ORG_DATA has 40.
-                byte offset {(size == Settings::BLOCK_2_DATA_SIZE) ? 8 : 40};
+                byte offset {(size == Settings::blockSize) ? 8 : 40};
 
                 byte serverID[Settings::ID_SIZE] = {};
                 memcpy(serverID, m_requestBuffer+offset, Settings::ID_SIZE);
@@ -559,7 +540,7 @@ class WiFiConfig
                 int readBytes {0};
                 while (Serial.available() > 0)
                 {
-                    if (readBytes < Settings::MAX_REQ_SIZE && readBytes < bufferSize)
+                    if (readBytes < Settings::MaxReqSize && readBytes < bufferSize)
                         m_requestBuffer[readBytes++] = Serial.read();
                     else
                         Serial.read(); // just empty the buffer.
@@ -568,10 +549,10 @@ class WiFiConfig
 
                 switch(bufferSize)
                 {
-                    case Settings::BLOCK_2_DATA_SIZE:
+                    case Settings::blockSize:
                         Serial.write(Settings::secretKey, sizeof(Settings::secretKey));
                         break;
-                    case Settings::TRUST_KEY_DATA_SIZE:
+                    case Settings::AuthDataSize:
                         Serial.write(Settings::testData, sizeof(Settings::testData));
 
                         // Ensure the read bytes and expected bytes match otherwise data read is invalid
@@ -594,7 +575,7 @@ class WiFiConfig
 
         // requestBuffer is a reserved contagious memory space where all request
         // from the serial communication can be read it.
-        byte m_requestBuffer[Settings::MAX_REQ_SIZE];
+        byte m_requestBuffer[Settings::MaxReqSize];
 };
 
 WiFiConfig config{};
@@ -624,6 +605,22 @@ void setup()
     // Delay to allow the serial interface to be ready..
     for (byte i {0}; i < Settings::blinksCount; ++i)
         blinkBuiltinLED(Settings::REFRESH_DELAY);
+
+    char buffer[Settings::ACK_SIGNAL_SIZE];
+
+    // Wait until the ACK signal is recieved and then respond back with the ready signal.
+    for(;;)
+    {
+        Serial.readBytes(buffer, Settings::ACK_SIGNAL_SIZE);
+
+        // Once signal is matched, respond with a ready signal
+        if (memcmp(Settings::ACK_SIGNAL, buffer, Settings::ACK_SIGNAL_SIZE)==0)
+        {
+            Serial.write(Settings::READY_SIGNAL, Settings::READY_SIGNAL_SIZE);
+            break; // exit the loop
+        }
+        delay(Settings::REFRESH_DELAY);
+    }
 
     digitalWrite(Settings::LED, LOW); // Turn off the LED after blinking
 

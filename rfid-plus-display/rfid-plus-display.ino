@@ -32,6 +32,12 @@ int main(void)
 	USBDevice.attach();
 #endif
 
+    Serial.begin(Settings::SERIAL_BAUD_RATE);
+    Serial1.begin(Settings::SERIAL_BAUD_RATE);
+
+    // Wait for at least 5 secs before timing out a serial1 readbytes operation.
+    Serial1.setTimeout(Settings::AUTH_DELAY);
+
     // LCD Pins Configuration
     const uint8_t LCD_RST {12};
     const uint8_t LCD_EN {11};
@@ -52,6 +58,28 @@ int main(void)
             LCD_D4, LCD_D5, LCD_D6, LCD_D7  // LCD 4-bit UART data pins
         };
 
+    // Initiate the devices configuration during the loading state.
+    rfid.setState(Transmitter::Loading);
+    rfid.setDetailsMsg((char*)"WiFi and devices configuration in progress  ", false);
+    
+    // Delay further initialization progress until the WiFi is configured.
+    Serial1.write(Settings::ACK_SIGNAL); // Send ACK signal.
+
+    char buffer[Settings::READY_SIGNAL_SIZE];
+
+    // Waits until the Ready signal is received. Serial1.readBytes() takes
+    // about 5 secs to timeout thus no delay function is neccesary here.
+    for(;;)
+    {
+        Serial1.readBytes(buffer, Settings::READY_SIGNAL_SIZE);
+        if (memcmp(Settings::READY_SIGNAL, buffer, Settings::READY_SIGNAL_SIZE) == 0)
+            break; // exit the loop
+
+        rfid.printScreen(); // handle display updates
+    }
+
+    free(buffer); // Memory not required anymore thus can be released for further use.
+
     // setup the IRQ pin
     pinMode(RFID_IRQ, INPUT_PULLUP);
 
@@ -64,14 +92,9 @@ int main(void)
     rfid.enableInterrupts(); // enable interrupts on IRQ pin.
     onInterrupt = false;
 
-    Serial.begin(Settings::SERIAL_BAUD_RATE);
-    Serial1.begin(Settings::SERIAL_BAUD_RATE);
+    delay(Settings::REFRESH_DELAY); // Prepare to move state machine to standby state.
 
-    delay(Settings::REFRESH_DELAY); // Prepare to move machine to standby state.
-
-    Serial.setTimeout(5000); // Wait for at least 5 secs.
-
-    // Machine has successfully booted up thus can be moved to the Standby State.
+    // Configuration has been successful thus state can be moved to the Standby.
     rfid.setState(Transmitter::StandBy);
 
 	for(;;) {

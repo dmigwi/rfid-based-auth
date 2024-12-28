@@ -171,6 +171,8 @@ char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
     {
         case BootUp:
             return (char*)"Hello, Warszawa!"; // Welcome Message. (16 chars + \0)
+        case Loading:
+            return (char*)"Please Wait...  "; // Welcome Message. (16 chars + \0)
         case StandBy:
             return (char*)"Scan a Tag...   "; // Waiting for a tag. (16 chars + \0)
         case ReadTag:
@@ -345,7 +347,7 @@ void Transmitter::readPICC()
 
     // Stage 4: Read the Card block contents.
     // - The data to be read is supposed to of size dataSize.
-    byte blocksToRead {Settings::dataSize/Settings::blockSize};
+    byte blocksToRead {Settings::blockSize/Settings::blockSize};
     byte lastValidBlock {(byte)(m_blockAuth.block0Addr + blocksToRead)};
 
     if (lastValidBlock <= Settings::maxBlockNo)
@@ -416,15 +418,15 @@ void Transmitter::networkConn()
     // 48 bytes => Trust Key Data
     // 1 byte => size of the rest of data size expected.
     // In total 68 bytes should be transmitted via the serial communication.
-    const size_t bytesToSend = 20 + Settings::dataSize; // Total 68 bytes
+    const size_t bytesToSend = 20 + Settings::blockSize; // Total 68 bytes
     const int sizeOfDeviceID {sizeof(Settings::DEVICE_ID)};
 
     byte txData[bytesToSend];
     txData[0] = bytesToSend - 1; // subtract its self as byte zero is read separately
-    memcpy(txData+1, m_cardData.readData, Settings::dataSize); // copy Trusk Key data.
+    memcpy(txData+1, m_cardData.readData, Settings::blockSize); // copy Trusk Key data.
     memcpy(txData+9, Settings::DEVICE_ID, sizeOfDeviceID); // Copy the Device ID
-    memcpy(txData+Settings::dataSize+1, m_rc522.uid.uidByte, 10); // copy card uid.
-    txData[Settings::dataSize+10+1] = m_rc522.uid.size; // copy card uid size.
+    memcpy(txData+Settings::blockSize+1, m_rc522.uid.uidByte, 10); // copy card uid.
+    txData[Settings::blockSize+10+1] = m_rc522.uid.size; // copy card uid size.
 
     // Serial.println(F(" TrustKey validation contents! "));
     // Serial.println(bytesToSend);
@@ -440,12 +442,12 @@ void Transmitter::networkConn()
     }
 
     // read the bytes sent back from the WIFI module.
-    size_t bytesRead {Serial1.readBytes(txData, Settings::dataSize)};
+    size_t bytesRead {Serial1.readBytes(txData, Settings::blockSize)};
 
     // For a successful Network Data read:
     // 1. Bytes read must match the match the size of a trust key.
     // 2. Device ID uid returned must match the existing one.
-    if (bytesRead == Settings::dataSize)
+    if (bytesRead == Settings::blockSize)
     {
         byte returnedDeviceID[sizeOfDeviceID];
         memcpy(returnedDeviceID, txData+40, sizeOfDeviceID); // copy device uid.
@@ -454,7 +456,7 @@ void Transmitter::networkConn()
         {
             setDetailsMsg((char*)"Network connection was successful!  ");
             m_cardData.status = MFRC522::STATUS_OK; // update status
-            memcpy(m_cardData.readData, txData, Settings::dataSize); // update the new card data
+            memcpy(m_cardData.readData, txData, Settings::blockSize); // update the new card data
             return;
         }
     }
@@ -468,7 +470,7 @@ void Transmitter::writePICC()
     setState(Transmitter::WriteTag);
     setDetailsMsg((char*)"Initiating tag writing operation!  ");
 
-    byte blocksToRead {Settings::dataSize/Settings::blockSize};
+    byte blocksToRead {Settings::blockSize/Settings::blockSize};
     byte buffer[Settings::blockSize];
 
     byte startBlock {0};
@@ -488,7 +490,7 @@ void Transmitter::writePICC()
     }
 
     // Serial.println(F(" TrustKey contents writing! "));
-    // dumpBytes(m_cardData.readData, Settings::dataSize);
+    // dumpBytes(m_cardData.readData, Settings::blockSize);
 
     if (m_cardData.status == MFRC522::STATUS_OK)
         setDetailsMsg((char*)"Tag writing was successful!  ");
