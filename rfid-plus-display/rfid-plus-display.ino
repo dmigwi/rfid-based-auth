@@ -52,18 +52,18 @@ int main(void)
     const uint8_t RFID_SS {23};  // A5 Pin
     const uint8_t RFID_IRQ {2}; // Interrupt pin
 
-    Transmitter rfid {
-            RFID_SS, RFID_RST,              // RC522 control Pins
-            LCD_RST, LCD_RW, LCD_EN,        // LCD Control Pins
-            LCD_D4, LCD_D5, LCD_D6, LCD_D7  // LCD 4-bit UART data pins
-        };
+    // Initialize the display class instance first.
+    Display view {
+        LCD_RST, LCD_RW, LCD_EN,        // LCD Control Pins
+        LCD_D4, LCD_D5, LCD_D6, LCD_D7  // LCD 4-bit UART data pins
+    };
 
-    // Give a delay to allow proper set of the transmitter.
+    // Give a delay to allow proper set up of the display.
     delay(Settings::AUTH_DELAY);
 
     // Initiate the devices configuration during the loading state.
-    rfid.setState(Transmitter::Loading);
-    rfid.setDetailsMsg((char*)"WiFi and devices configuration in progress  ", true);
+    view.setStatusMsg(Display::Loading, false);
+    view.setDetailsMsg((char*)"WiFi and devices configuration in progress  ", true);
 
     char buffer[Settings::READY_SIGNAL_SIZE];
     // Delay further initialization progress until the WiFi is configured.
@@ -79,10 +79,14 @@ int main(void)
         if (memcmp(Settings::READY_SIGNAL, buffer, Settings::READY_SIGNAL_SIZE-1) == 0)
             break; // exit the loop
 
-        rfid.printScreen(); // handle display updates
+        view.printScreen(); // handle display updates
     }
 
     free(buffer); // Memory not required anymore thus can be released for further use.
+
+    // Once WiFi and devices configuration is successful, the transmitter class
+    // can now be properly initialized.
+    Transmitter rfid {  RFID_SS, RFID_RST, view};
 
     // Wait for at least 5 secs before timing out a serial1 readbytes operation.
     Serial1.setTimeout(Settings::AUTH_DELAY);
@@ -102,7 +106,7 @@ int main(void)
     delay(Settings::REFRESH_DELAY); // Prepare to move state machine to standby state.
 
     // Configuration has been successful thus state can be moved to the Standby.
-    rfid.setState(Transmitter::StandBy);
+    rfid.setStatusMsg(Display::StandBy, false);
     rfid.setDetailsMsg((char*)"The weather today is too cold for me (:!  ", true);
 
 	for(;;) {

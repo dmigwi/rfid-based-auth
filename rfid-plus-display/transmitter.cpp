@@ -47,32 +47,62 @@ Display::Display(
 {
     // set up the LCD's number of columns and rows:
     m_lcd.begin(maxColumns, maxRows);
+
+    delay(100);
+
+    // Display the bootup welcome message.
+    setStatusMsg(BootUp, false);
+    setDetailsMsg((char*)"The weather today is too cold for me (:!  ", true);
+}
+
+// stateToStatus returns the string version of each state translated to
+// its corresponding status message. A consistent length of 16 characters
+// plus a null terminator is returned for each message.
+char* Display::stateToStatus(MachineState& state) const
+{
+    switch (state)
+    {
+        case BootUp:
+            return (char*)"Hello, Warszawa!"; // Welcome Message. (16 chars + \0)
+        case Loading:
+            return (char*)"Please Wait...  "; // Welcome Message. (16 chars + \0)
+        case StandBy:
+            return (char*)"Scan a Tag...   "; // Waiting for a tag. (16 chars + \0)
+        case ReadTag:
+            return (char*)"Tag Reading...  "; // Reading the tag. (16 chars + \0)
+        case Network:
+            return (char*)"WiFi Commun...  "; // Network Connection. (16 chars + \0)
+        case WriteTag:
+            return (char*)"Tag Writing...  "; // Writing the tag. (16 chars + \0)
+        default:
+            return (char*)"  --Unknown!--  "; // (16 chars + \0)
+    }
 }
 
 // setStatusMsg set the status message that is to be displayed on Row 1.
 // This message is mostly concise with clear message and doesn't require
 // scrolling. The displayNow option defaults to false unless specified
 // as true.
-void Display::setStatusMsg(char* data, bool displayNow = false, bool isClear = false)
+void Display::setStatusMsg(MachineState state, bool displayNow = false)
 {
     // If content mismatch, clean up the screen before printing the new content.
-    strcpy(m_statusMsg.text, data);
+    strcpy(m_statusMsg.text, stateToStatus(state));
     m_statusMsg.index = 0;
     m_detailsMsg.index = 0;
 
-    // screen refresh is necessary everytime status changes.
+    // Screen clearing is required mainly on the Standby status update
+    if (state == StandBy)
     {
-        // m_lcd.clear() takes up 2 sec which makes it look like the screen froze.
-        // Since only the second row requires clearing, print whitespace chars is
-        // far much better.
+        // m_lcd.clear() takes upto 2 sec to clear the screen which makes it
+        // look like the screen froze. Since only the second row requires
+        // clearing, printing 16 whitespace chars is far much better.
         m_lcd.setCursor(0,1);
-        m_lcd.print("                "); // 16 whitespace chars are printed
+        m_lcd.print("               "); // 16 whitespace chars.
     }
 
     // Triggers immediate screen update if true.
     if (displayNow)
         printScreen();
-
 }
 
 // setDetailsMsg sets the details message that is to be displayed on Row 2.
@@ -142,18 +172,11 @@ void Display::print(Msg &msg, byte col, byte line)
 //////////////////////////////////////////////////
 
 // Transmitter constructor.
-Transmitter::Transmitter(
-    byte RFID_SS, byte RFID_RST, // RFID control pins
-    byte LCD_RST, byte LCD_RW, byte LCD_EN,  // LCD Control Pins
-    byte LCD_D4, byte LCD_D5, byte LCD_D6, byte LCD_D7 // LCD 4-bit UART data pins
-    )
-    : Display(LCD_RST, LCD_RW, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7),
-        m_rc522 {RFID_SS, RFID_RST}
+Transmitter::Transmitter( byte RFID_SS, byte RFID_RST, // RFID control pins
+    Display& view
+)
+    : Display(view), m_rc522 {RFID_SS, RFID_RST}
 {
-    // Display the bootup welcome message.
-    setState(Transmitter::BootUp);
-    setDetailsMsg((char*)"The weather today is too cold for me (:!  ");
-
     SPI.begin();            // Init SPI bus.
     m_rc522.PCD_Init();     // Init MFRC522 Library.
 
@@ -166,39 +189,6 @@ Transmitter::Transmitter(
 bool Transmitter::isNewCardDetected()
 {
     return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
-}
-
-// stateToStatus returns the string version of each state translated to
-// its corresponding status message. A consistent length of 16 characters
-// plus a null terminator is returned for each message.
-char* Transmitter::stateToStatus(Transmitter::MachineState& state) const
-{
-    switch (state)
-    {
-        case BootUp:
-            return (char*)"Hello, Warszawa!"; // Welcome Message. (16 chars + \0)
-        case Loading:
-            return (char*)"Please Wait...  "; // Welcome Message. (16 chars + \0)
-        case StandBy:
-            return (char*)"Scan a Tag...   "; // Waiting for a tag. (16 chars + \0)
-        case ReadTag:
-            return (char*)"Tag Reading...  "; // Reading the tag. (16 chars + \0)
-        case Network:
-            return (char*)"WiFi Commun...  "; // Network Connection. (16 chars + \0)
-        case WriteTag:
-            return (char*)"Tag Writing...  "; // Writing the tag. (16 chars + \0)
-        default:
-            return (char*)"  --Unknown!--  "; // (16 chars + \0)
-    }
-}
-
-// setState updates the state of the device and the status message
-// that appears on the display.
-void Transmitter::setState(Transmitter::MachineState state)
-{
-    m_state = state;
-    char* status {stateToStatus(state)};
-    setStatusMsg(status, false, state==StandBy); // Reset on Standby Mode always.
 }
 
 // setPICCAuthKeyB generates the KeyB authentication bytes from XORing a
@@ -288,7 +278,7 @@ void Transmitter::readPICC()
     //  - Card is already activated and UID retrieved. Card is ready for next operations.
 
     // A Tag has been detected thus the machines state is updated to read tag state.
-    setState(Transmitter::ReadTag);
+    setStatusMsg(ReadTag);
     setDetailsMsg((char*)"Init authentication to validate key!  ");
 
     // Stage 2: Attempt Authentication using KeyA and read block 2 address contents
@@ -413,7 +403,7 @@ void Transmitter::networkConn()
     m_cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
 
     // With data read from the tag, connection to the validation server is established.
-    setState(Transmitter::Network);
+    setStatusMsg(Network);
     setDetailsMsg((char*)"Initiating network connection!  ");
 
     // Data sent to the WIFI module should be in the following format:
@@ -472,7 +462,7 @@ void Transmitter::networkConn()
 void Transmitter::writePICC()
 {
     // With data returned from the validation server, PICC can be written.
-    setState(Transmitter::WriteTag);
+    setStatusMsg(WriteTag);
     setDetailsMsg((char*)"Initiating tag writing operation!  ");
 
     byte blocksToRead {Settings::TrustKeySize/Settings::blockSize};
@@ -551,7 +541,7 @@ void Transmitter::handleDetectedCard()
 
     // Reset the machine state to standy by indicating that the device is ready
     // to handle another PICC selected.
-    setState(Transmitter::StandBy);
+    setStatusMsg(StandBy);
 }
 
 // setUidBasedKey replaces the non-uid base key with a Uid based which is

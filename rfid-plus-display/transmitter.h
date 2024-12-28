@@ -119,6 +119,30 @@ namespace Settings
 class Display
 {
     public:
+        // MachineState describes the various phase the devices oscillates in
+        // between during its normal operation.
+        enum MachineState {
+            // BootUp State is the initial state set on device power On.
+            BootUp,
+            // Loading State is when the WIFI configuration is being setup.
+            Loading,
+            // StandBy State is the Idle State when waiting for tag(s) to read/write.
+            StandBy,
+            // ReadTag State is set on tag detection where authentication and
+            // Blocks/Sectors reading is carried out.
+            ReadTag,
+            // Network State is set when the data read is sent to an
+            // validation server.
+            Network,
+            // WriteTag State is set when the validation server sends data to be
+            // written into the tag.
+            WriteTag,
+
+            // Unknown State is set to indicate the undefined state the machine is
+            // currently in.
+            Unknown,
+        };
+
         typedef struct
         {
            char* text; // display text
@@ -132,10 +156,14 @@ class Display
             byte D4, byte D5, byte D6, byte D7 // 4-bit UART data pins
         );
 
+        // stateToStatus returns the string version of each state translated to
+        // its corresponding status message.
+        char* stateToStatus(MachineState& state) const;
+
         // setStatusMsg set the status message that is to be displayed on Row 1.
         // This message is mostly concise with clear message and doesn't require
         // scrolling.
-        void setStatusMsg(char* data, bool displayNow, bool isClear);
+        void setStatusMsg(MachineState state, bool displayNow);
 
         // setDetailsMsg sets the details message that is to be displayed on Row 2.
         // This message is usually a longer explanation of the status message and
@@ -174,30 +202,6 @@ class Display
 class Transmitter: public Display
 {
     public:
-        // MachineState describes the various phase the devices oscillates in
-        // between during its normal operation.
-        enum MachineState {
-            // BootUp State is the initial state set on device power On.
-            BootUp,
-            // Loading State is when the WIFI configuration is being setup.
-            Loading,
-            // StandBy State is the Idle State when waiting for tag(s) to read/write.
-            StandBy,
-            // ReadTag State is set on tag detection where authentication and
-            // Blocks/Sectors reading is carried out.
-            ReadTag,
-            // Network State is set when the data read is sent to an
-            // validation server.
-            Network,
-            // WriteTag State is set when the validation server sends data to be
-            // written into the tag.
-            WriteTag,
-
-            // Unknown State is set to indicate the undefined state the machine is
-            // currently in.
-            Unknown,
-        };
-
         // BlockAuth defines data to be returned once a successsful authentication
         // has been established on a card.
         typedef struct
@@ -218,11 +222,9 @@ class Transmitter: public Display
         } UserData;
 
 
-        Transmitter(
-            byte RFID_SS, byte RFID_RST, // RFID control pins
-            byte LCD_RST, byte LCD_RW, byte LCD_EN,  // LCD Control Pins
-            byte LCD_D4, byte LCD_D5, byte LCD_D6, byte LCD_D7 // LCD 4-bit UART data pins
-            );
+        Transmitter( byte RFID_SS, byte RFID_RST, // RFID control pins
+            Display& view
+        );
 
         // isNewCardDetected returns true for the new card detected and their
         // respective serial numbers can be read.
@@ -263,13 +265,6 @@ class Transmitter: public Display
         // the card to be done as a matter of urgency.
         void handleDetectedCard();
 
-        // stateToStatus returns the string version of each state translated to
-        // its corresponding status message.
-        char* stateToStatus(MachineState& state) const;
-
-        // setState updates the state of the device.
-        void setState(MachineState state);
-
         // resetInterrupt clears the pending interrupt bits after being resolved.
         // Enables the module to detect new interrupts.
         void resetInterrupt()
@@ -298,8 +293,6 @@ class Transmitter: public Display
 
     private:
         MFRC522 m_rc522;
-
-        MachineState m_state {BootUp};
 
         BlockAuth m_blockAuth{};
 
