@@ -35,8 +35,8 @@ int main(void)
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
 
-    // Wait for at least 5 secs before timing out a serial1 readbytes operation.
-    Serial1.setTimeout(Settings::AUTH_DELAY);
+    // Wait for at least 800ms before timing out a serial1 readbytes operation.
+    Serial1.setTimeout(Settings::REFRESH_DELAY);
 
     // LCD Pins Configuration
     const uint8_t LCD_RST {12};
@@ -58,27 +58,34 @@ int main(void)
             LCD_D4, LCD_D5, LCD_D6, LCD_D7  // LCD 4-bit UART data pins
         };
 
+    // Give a delay to allow proper set of the transmitter.
+    delay(Settings::AUTH_DELAY);
+
     // Initiate the devices configuration during the loading state.
     rfid.setState(Transmitter::Loading);
-    rfid.setDetailsMsg((char*)"WiFi and devices configuration in progress  ", false);
-    
-    // Delay further initialization progress until the WiFi is configured.
-    Serial1.write(Settings::ACK_SIGNAL); // Send ACK signal.
+    rfid.setDetailsMsg((char*)"WiFi and devices configuration in progress  ", true);
 
     char buffer[Settings::READY_SIGNAL_SIZE];
-
+    // Delay further initialization progress until the WiFi is configured.
     // Waits until the Ready signal is received. Serial1.readBytes() takes
-    // about 5 secs to timeout thus no delay function is neccesary here.
+    // about 1 secs to timeout thus no delay function is neccesary here.
     for(;;)
     {
+        if (Serial1.availableForWrite() > 0)
+            Serial1.write(Settings::ACK_SIGNAL); // Send ACK signal.
+
         Serial1.readBytes(buffer, Settings::READY_SIGNAL_SIZE);
-        if (memcmp(Settings::READY_SIGNAL, buffer, Settings::READY_SIGNAL_SIZE) == 0)
+        // readByte() doesn't return a none null terminated string thus -1 is used.
+        if (memcmp(Settings::READY_SIGNAL, buffer, Settings::READY_SIGNAL_SIZE-1) == 0)
             break; // exit the loop
 
         rfid.printScreen(); // handle display updates
     }
 
     free(buffer); // Memory not required anymore thus can be released for further use.
+
+    // Wait for at least 5 secs before timing out a serial1 readbytes operation.
+    Serial1.setTimeout(Settings::AUTH_DELAY);
 
     // setup the IRQ pin
     pinMode(RFID_IRQ, INPUT_PULLUP);
@@ -87,7 +94,7 @@ int main(void)
     attachInterrupt(digitalPinToInterrupt(RFID_IRQ), handleInterrupt, CHANGE);
 
     // Clear initial false positive interrupt(s).
-    do { ; } while(!onInterrupt);
+    do { ; } while(onInterrupt);
 
     rfid.enableInterrupts(); // enable interrupts on IRQ pin.
     onInterrupt = false;
@@ -96,6 +103,7 @@ int main(void)
 
     // Configuration has been successful thus state can be moved to the Standby.
     rfid.setState(Transmitter::StandBy);
+    rfid.setDetailsMsg((char*)"The weather today is too cold for me (:!  ", true);
 
 	for(;;) {
         // Print to the display

@@ -22,7 +22,7 @@
 // Assigns the global variable an initial value of false.
 volatile bool onInterrupt {false};
 
-// ****Function used for debug purposes Only!****
+// // ****Function used for debug purposes Only!****
 // // dumpBytes dumps the buts on the serial output.
 // void dumpBytes(byte* data, byte count)
 // {
@@ -60,8 +60,14 @@ void Display::setStatusMsg(char* data, bool displayNow = false, bool isClear = f
     m_statusMsg.index = 0;
     m_detailsMsg.index = 0;
 
-    if (isClear)
-        m_lcd.clear();
+    // screen refresh is necessary everytime status changes.
+    {
+        // m_lcd.clear() takes up 2 sec which makes it look like the screen froze.
+        // Since only the second row requires clearing, print whitespace chars is
+        // far much better.
+        m_lcd.setCursor(0,1);
+        m_lcd.print("                "); // 16 whitespace chars are printed
+    }
 
     // Triggers immediate screen update if true.
     if (displayNow)
@@ -152,7 +158,7 @@ Transmitter::Transmitter(
     m_rc522.PCD_Init();     // Init MFRC522 Library.
 
     // Allow all the MFRC522 init function to finish execution.
-    delay(Settings::REFRESH_DELAY);
+    delay(Settings::AUTH_DELAY);
 }
 
 // isNewCardDetected returns true for the new card detected and their
@@ -346,8 +352,8 @@ void Transmitter::readPICC()
     setPICCAuthKeyB(secretKey);
 
     // Stage 4: Read the Card block contents.
-    // - The data to be read is supposed to of size dataSize.
-    byte blocksToRead {Settings::blockSize/Settings::blockSize};
+    // - The data to be read is supposed to of size TrustKeySize.
+    byte blocksToRead {Settings::TrustKeySize/Settings::blockSize};
     byte lastValidBlock {(byte)(m_blockAuth.block0Addr + blocksToRead)};
 
     if (lastValidBlock <= Settings::maxBlockNo)
@@ -404,7 +410,6 @@ void Transmitter::readPICC()
 // card data is validated.
 void Transmitter::networkConn()
 {
-
     m_cardData.status = MFRC522::STATUS_ERROR; // set default status to error.
 
     // With data read from the tag, connection to the validation server is established.
@@ -418,15 +423,15 @@ void Transmitter::networkConn()
     // 48 bytes => Trust Key Data
     // 1 byte => size of the rest of data size expected.
     // In total 68 bytes should be transmitted via the serial communication.
-    const size_t bytesToSend = 20 + Settings::blockSize; // Total 68 bytes
+    const size_t bytesToSend = 20 + Settings::TrustKeySize; // Total 68 bytes
     const int sizeOfDeviceID {sizeof(Settings::DEVICE_ID)};
 
     byte txData[bytesToSend];
     txData[0] = bytesToSend - 1; // subtract its self as byte zero is read separately
-    memcpy(txData+1, m_cardData.readData, Settings::blockSize); // copy Trusk Key data.
+    memcpy(txData+1, m_cardData.readData, Settings::TrustKeySize); // copy Trusk Key data.
     memcpy(txData+9, Settings::DEVICE_ID, sizeOfDeviceID); // Copy the Device ID
-    memcpy(txData+Settings::blockSize+1, m_rc522.uid.uidByte, 10); // copy card uid.
-    txData[Settings::blockSize+10+1] = m_rc522.uid.size; // copy card uid size.
+    memcpy(txData+Settings::TrustKeySize+1, m_rc522.uid.uidByte, 10); // copy card uid.
+    txData[Settings::TrustKeySize+10+1] = m_rc522.uid.size; // copy card uid size.
 
     // Serial.println(F(" TrustKey validation contents! "));
     // Serial.println(bytesToSend);
@@ -442,12 +447,12 @@ void Transmitter::networkConn()
     }
 
     // read the bytes sent back from the WIFI module.
-    size_t bytesRead {Serial1.readBytes(txData, Settings::blockSize)};
+    size_t bytesRead {Serial1.readBytes(txData, Settings::TrustKeySize)};
 
     // For a successful Network Data read:
     // 1. Bytes read must match the match the size of a trust key.
     // 2. Device ID uid returned must match the existing one.
-    if (bytesRead == Settings::blockSize)
+    if (bytesRead == Settings::TrustKeySize)
     {
         byte returnedDeviceID[sizeOfDeviceID];
         memcpy(returnedDeviceID, txData+40, sizeOfDeviceID); // copy device uid.
@@ -456,7 +461,7 @@ void Transmitter::networkConn()
         {
             setDetailsMsg((char*)"Network connection was successful!  ");
             m_cardData.status = MFRC522::STATUS_OK; // update status
-            memcpy(m_cardData.readData, txData, Settings::blockSize); // update the new card data
+            memcpy(m_cardData.readData, txData, Settings::TrustKeySize); // update the new card data
             return;
         }
     }
@@ -470,7 +475,7 @@ void Transmitter::writePICC()
     setState(Transmitter::WriteTag);
     setDetailsMsg((char*)"Initiating tag writing operation!  ");
 
-    byte blocksToRead {Settings::blockSize/Settings::blockSize};
+    byte blocksToRead {Settings::TrustKeySize/Settings::blockSize};
     byte buffer[Settings::blockSize];
 
     byte startBlock {0};
@@ -490,7 +495,7 @@ void Transmitter::writePICC()
     }
 
     // Serial.println(F(" TrustKey contents writing! "));
-    // dumpBytes(m_cardData.readData, Settings::blockSize);
+    // dumpBytes(m_cardData.readData, Settings::TrustKeySize);
 
     if (m_cardData.status == MFRC522::STATUS_OK)
         setDetailsMsg((char*)"Tag writing was successful!  ");

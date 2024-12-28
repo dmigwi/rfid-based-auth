@@ -30,7 +30,7 @@ namespace CommonRFID
 
     // REFRESH_DELAY defines the interval at which components are refreshed
     // e.g the display.
-    constexpr int REFRESH_DELAY {800};
+    constexpr int REFRESH_DELAY {700};
 
     // AUTH_DELAY defines the length in ms the systems waits to initiate a new
     // authentication after the previous one finished.

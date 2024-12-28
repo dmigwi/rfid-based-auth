@@ -170,11 +170,13 @@ class WebServer
         {
             byte nameLenAllowed {Settings::MAX_SSID_LEN -1 };
             byte passLenAllowed {Settings::MAX_PASS_LEN -1 };
-            char buffer[1500];  // Preallocate a large chunk to avoid memory fragmentation
+            char *buffer = new char[1500];  // Preallocate a large chunk to avoid memory fragmentation
             sprintf(buffer, rootContent,
                     m_authKeys.WiFiName, nameLenAllowed, nameLenAllowed,
                     m_authKeys.password, passLenAllowed, passLenAllowed );
             m_server.send(200, "text/html", buffer);
+
+            delete[] buffer;
         }
 
         // handleShutdown enables the user to safely exit the configuration setup mode by shutting down
@@ -240,10 +242,12 @@ class WebServer
                 }
             }
 
-            char buffer[1000];  // Preallocate a large chunk to avoid memory fragmentation
+            char *buffer = new char[1000];  // Preallocate a large chunk to avoid memory fragmentation
             sprintf(buffer, updateSuccessfulContent, updateStatus, m_authKeys.WiFiName,
                 m_authKeys.password);
             m_server.send(200, "text/html", buffer);
+
+            delete[] buffer;
         }
 
         // printConnectionStatus prints the status of the AP connectivity.
@@ -606,6 +610,8 @@ void setup()
     for (byte i {0}; i < Settings::blinksCount; ++i)
         blinkBuiltinLED(Settings::REFRESH_DELAY);
 
+    config.establishConnection();
+
     char buffer[Settings::ACK_SIGNAL_SIZE];
 
     // Wait until the ACK signal is recieved and then respond back with the ready signal.
@@ -613,18 +619,22 @@ void setup()
     {
         Serial.readBytes(buffer, Settings::ACK_SIGNAL_SIZE);
 
-        // Once signal is matched, respond with a ready signal
-        if (memcmp(Settings::ACK_SIGNAL, buffer, Settings::ACK_SIGNAL_SIZE)==0)
+        // Once signal is matched, respond with a ready signal. readBytes()
+        // returns a none null terminated thus -1 in the comparison.
+        if (memcmp(Settings::ACK_SIGNAL, buffer, Settings::ACK_SIGNAL_SIZE-1)==0)
         {
-            Serial.write(Settings::READY_SIGNAL, Settings::READY_SIGNAL_SIZE);
+            Serial.write(Settings::READY_SIGNAL);
             break; // exit the loop
         }
-        delay(Settings::REFRESH_DELAY);
+       blinkBuiltinLED(Settings::REFRESH_DELAY);
     }
 
-    digitalWrite(Settings::LED, LOW); // Turn off the LED after blinking
+    // empty the buffer if there exists unread data. This prevents the unread
+    // data being carried forward into other processes.
+    while(Serial.available() > 0)
+        Serial.read();
 
-    config.establishConnection();
+    digitalWrite(Settings::LED, LOW); // Turn off the LED after blinking
 }
 
 void loop()
