@@ -550,13 +550,13 @@ class WiFiConfig
                         Serial.read(); // just empty the buffer.
                 }
 
-
+                // One is subtracted because the first byte is read separately.
                 switch(bufferSize)
                 {
-                    case Settings::blockSize:
+                    case Settings::SecretKeyAuthDataSize-1:
                         Serial.write(Settings::secretKey, sizeof(Settings::secretKey));
                         break;
-                    case Settings::AuthDataSize:
+                    case Settings::TrustKeyAuthDataSize-1:
                         Serial.write(Settings::testData, sizeof(Settings::testData));
 
                         // Ensure the read bytes and expected bytes match otherwise data read is invalid

@@ -307,12 +307,22 @@ void Transmitter::readPICC()
         return;
     }
 
-    // dataSent is bundled together with the data size and actual data in one array.
-    // The first byte is always the data size.
-    const byte bytesToSend {Settings::blockSize + 1};
+    byte deviceIdBuff[sizeof(Settings::DEVICE_ID)] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+    #ifdef IS_TRUST_ORG
+    // Set the actual device ID only during the trust org mode.
+    // During the trust org mode, a new secret key is returned if none existed.
+    memcpy(deviceIdBuff, Settings::DEVICE_ID, sizeof(Settings::DEVICE_ID));
+    #endif
+
+    // This order of packaging should never be altered!
+    const byte bytesToSend {Settings::SecretKeyAuthDataSize};
     byte dataSent[bytesToSend];
-    dataSent[0] = Settings::blockSize;
-    memcpy(dataSent+1, m_blockAuth.block2Data, Settings::blockSize);
+    dataSent[0] = Settings::SecretKeyAuthDataSize-1; // subtract 1 as byte zero is read separately
+    dataSent[1] = m_rc522.uid.size;                                         // copy card uid size
+    memcpy(dataSent+2, m_rc522.uid.uidByte, 10);                            // copy card uid.
+    memcpy(dataSent+11, deviceIdBuff, sizeof(Settings::DEVICE_ID));  // copy the current PCD ID
+    memcpy(dataSent+19, m_blockAuth.block2Data, Settings::blockSize);       // copy block 2 data
 
     // Stage 3: Send the block 2 Contents to the trust organization for validation.
     // - Use Serial transmission to send the data to and from the WIFI module.
@@ -406,26 +416,20 @@ void Transmitter::networkConn()
     setStatusMsg(Network);
     setDetailsMsg((char*)"Initiating network connection!  ");
 
-    // Data sent to the WIFI module should be in the following format:
-    // 1 byte => UID size, either of (4/7/10)
-    // 10 bytes => card's UID Data
-    // 8 bytes => Current PCD's ID
-    // 48 bytes => Trust Key Data
-    // 1 byte => size of the rest of data size expected.
     // In total 68 bytes should be transmitted via the serial communication.
-    const size_t bytesToSend = 20 + Settings::TrustKeySize; // Total 68 bytes
     const int sizeOfDeviceID {sizeof(Settings::DEVICE_ID)};
 
-    byte txData[bytesToSend];
-    txData[0] = bytesToSend - 1; // subtract its self as byte zero is read separately
-    memcpy(txData+1, m_cardData.readData, Settings::TrustKeySize); // copy Trusk Key data.
-    memcpy(txData+9, Settings::DEVICE_ID, sizeOfDeviceID); // Copy the Device ID
-    memcpy(txData+Settings::TrustKeySize+1, m_rc522.uid.uidByte, 10); // copy card uid.
-    txData[Settings::TrustKeySize+10+1] = m_rc522.uid.size; // copy card uid size.
+    // This order of packaging should never be altered!
+    byte txData[Settings::TrustKeyAuthDataSize];
+    txData[0] = Settings::TrustKeyAuthDataSize - 1; // subtract 1 as byte zero is read separately
+    txData[1] = m_rc522.uid.size;                                       // copy card uid size.
+    memcpy(txData+2, m_rc522.uid.uidByte, 10);                          // copy card uid.
+    memcpy(txData+11, Settings::DEVICE_ID, sizeOfDeviceID);             // copy the current PCD ID
+    memcpy(txData+19, m_cardData.readData, Settings::TrustKeySize);     // copy Trust Key data.
 
     // Serial.println(F(" TrustKey validation contents! "));
-    // Serial.println(bytesToSend);
-    // dumpBytes(txData, bytesToSend);
+    // Serial.println(Settings::TrustKeyAuthDataSize);
+    // dumpBytes(txData, Settings::TrustKeyAuthDataSize);
 
     // Make the serial transfer of the complete data.
     {
@@ -433,7 +437,7 @@ void Transmitter::networkConn()
         while(Serial1.available() > 0)
             Serial1.read(); // reads till the buffer is empty.
 
-        Serial1.write(txData, bytesToSend); // Write the data into the serial transmission.
+        Serial1.write(txData, Settings::TrustKeyAuthDataSize); // Write the data into the serial transmission.
     }
 
     // read the bytes sent back from the WIFI module.

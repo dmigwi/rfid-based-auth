@@ -46,16 +46,27 @@ namespace CommonRFID
     // then 3 consecutive blocks will be adequate to store 384 bit/ 48 bytes.
     constexpr byte TrustKeySize{48};
 
-    // AuthDataSize defines the size data expected when validating
-    // a trust key read from the NFC tag.
+    // SecretKeyAuthDataSize defines the size of data expected when authenticating
+    // block 2 data and subsequently generating the secret key. It contains:
+    // 1 byte => Data size expected minus itself. (first byte)
+    // 1 byte => UID size, either of (4/7/10)
+    // 10 bytes => card's UID Data
+    // 8 bytes => Current PCD's ID
+    // 16 bytes => Block 2 Data
+    // In total 36 bytes should be transmitted via the serial communication.
+    // NB: Data is packaged in the order above as from byte zero.
+    constexpr byte SecretKeyAuthDataSize {36};
+
+    // TrustKeyAuthDataSize defines the size of data expected when validating
+    // a trust key read from the NFC tag. It contains:
+    // 1 byte => Data size expected minus itself. (first byte)
     // 1 byte => UID size, either of (4/7/10)
     // 10 bytes => card's UID Data
     // 8 bytes => Current PCD's ID
     // 48 bytes => Trust Key Data
-    // 1 byte => size of the rest of data size expected.
     // In total 68 bytes should be transmitted via the serial communication.
-    // Since the first byte is read separately, subtract 1 to get 67 bytes.
-    constexpr int AuthDataSize {67};
+    // NB: Data is packaged in the order above as from byte zero.
+    constexpr byte TrustKeyAuthDataSize {68};
 
     // MaxReqSize the maximum size of the data from the serial communication
     // can be read into contagious memory location.
