@@ -533,7 +533,7 @@ void setup()
     Serial.begin(Settings::SERIAL_BAUD_RATE); // Initialize the Arduino serial port
     Serial1.begin(Settings::SERIAL_BAUD_RATE); // Initialize the ESP8266 serial port
 
-    Serial.setTimeout(50); // set read bytes timeout to 50ms
+    Serial.setTimeout(30); // set read bytes timeout to 30ms
 
     // Set the GPIO2 Pin as output and set it LOW.
     pinMode(Settings::LED, OUTPUT);

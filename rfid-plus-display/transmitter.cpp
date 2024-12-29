@@ -181,7 +181,7 @@ Transmitter::Transmitter( byte RFID_SS, byte RFID_RST, // RFID control pins
     m_rc522.PCD_Init();     // Init MFRC522 Library.
 
     // Allow all the MFRC522 init function to finish execution.
-    delay(Settings::AUTH_DELAY);
+    delay(Settings::REFRESH_DELAY);
 }
 
 // isNewCardDetected returns true for the new card detected and their
@@ -345,6 +345,9 @@ void Transmitter::readPICC()
         return;
     }
 
+    // Serial.println(F(" Returned SecretKey contents! "));
+    // dumpBytes(secretKey, MFRC522::MF_KEY_SIZE);
+
     // KeyB needs to be computed using the successfully read secret key.
     // KeyA only has read-only permissions to block 2 address while KeyB has both
     // read and write permissions to the whole sector.
@@ -438,8 +441,15 @@ void Transmitter::networkConn()
         Serial1.write(txData, Settings::TrustKeyAuthDataSize); // Write the data into the serial transmission.
     }
 
+    // Delay to cover the network latency between the server and WiFi module.
+    delay(Settings::REFRESH_DELAY);
+
     // read the bytes sent back from the WIFI module.
     size_t bytesRead {Serial1.readBytes(txData, Settings::TrustKeySize)};
+
+    // Serial.println(F(" TrustKey returned contents! "));
+    // Serial.println(bytesRead);
+    // dumpBytes(txData, bytesRead);
 
     // For a successful Network Data read:
     // 1. Bytes read must match the match the size of a trust key.
@@ -448,6 +458,9 @@ void Transmitter::networkConn()
     {
         byte returnedDeviceID[sizeOfDeviceID];
         memcpy(returnedDeviceID, txData+40, sizeOfDeviceID); // copy device uid.
+
+        // Serial.println(F(" Copied Device ID contents! "));
+        // dumpBytes(returnedDeviceID, sizeOfDeviceID);
 
         if (memcmp(returnedDeviceID, Settings::DEVICE_ID, sizeOfDeviceID) == 0)
         {

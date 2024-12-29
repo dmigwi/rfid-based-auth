@@ -67,15 +67,14 @@ int main(void)
 
     char buffer[Settings::READY_SIGNAL_SIZE];
     // Delay further initialization progress until the WiFi is configured.
-    // Waits until the Ready signal is received. Serial1.readBytes() takes
+    // Waits until the READY signal is received. Serial1.readBytes() takes
     // about 1 secs to timeout thus no delay function is neccesary here.
     for(;;)
     {
-        if (Serial1.availableForWrite() > 0)
-            Serial1.write(Settings::ACK_SIGNAL); // Send ACK signal.
+        Serial1.write(Settings::ACK_SIGNAL); // Send ACK signal.
 
         Serial1.readBytes(buffer, Settings::READY_SIGNAL_SIZE);
-        // readByte() doesn't return a none null terminated string thus -1 is used.
+        // readByte() doesn't return a none-null terminated string thus -1 is used.
         if (memcmp(Settings::READY_SIGNAL, buffer, Settings::READY_SIGNAL_SIZE-1) == 0)
             break; // exit the loop
 
@@ -86,7 +85,7 @@ int main(void)
 
     // Once WiFi and devices configuration is successful, the transmitter class
     // can now be properly initialized.
-    Transmitter rfid {  RFID_SS, RFID_RST, view};
+    Transmitter rfid {RFID_SS, RFID_RST, view};
 
     // Wait for at least 5 secs before timing out a serial1 readbytes operation.
     Serial1.setTimeout(Settings::AUTH_DELAY);
@@ -113,12 +112,13 @@ int main(void)
         // Print to the display
         rfid.printScreen();
 
-        // Handle the interrupt if it has been detected.
-        if (onInterrupt) rfid.handleDetectedCard();
-
-        // RFID module is requested to transmit it data so that the microcontroller
-        // can confirm if there is an interrupt to be handled.
-        rfid.activateTransmission();
+        if (onInterrupt)
+            // Handle the interrupt if it has been detected.
+            rfid.handleDetectedCard();
+        else
+            // Request RFID module transmits its data so that the microcontroller
+            // can confirm if there is an interrupt to be handled.
+            rfid.activateTransmission();
 
         delay(Settings::REFRESH_DELAY);
 	}
