@@ -75,25 +75,6 @@ namespace Settings
     // an NFC.
     constexpr byte ID_SIZE {8};
 
-    // KNOWN_SERVER_IDs defines a list of known servers unique serial identifiers.
-    // It is used to match data recieved with the server that will process it.
-    static const byte KNOWN_SERVER_IDs[][ID_SIZE] = {
-        {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44},
-    };
-
-    // KNOWN_SERVER_APIs defines a list of the known URLs to which the data
-    // received will be matched to it respective API URL.
-    static const char* KNOWN_SERVER_APIs[] =  {
-        {"http://dmigwi.atwebpages.com/auth/time.php"},
-    };
-
-    // ServerIdsCount defines the number known servers IDs in the KNOWN_SERVER_IDs
-    // array of ID. A corresponding entry for known Url should be added at
-    // KNOWN_SERVER_APIs otherwise a client error will occur.
-    constexpr byte ServerIDsCount {
-        (sizeof(Settings::KNOWN_SERVER_IDs) / sizeof(Settings::KNOWN_SERVER_IDs[0]))
-    };
-
     // MAX_SSID_LEN defines the maximum characters allowed for a wifi name.
     // A total of 31 characters + the null teminitor are allowed.
     const byte MAX_SSID_LEN {32};
@@ -121,14 +102,6 @@ namespace Settings
         char WiFiName[MAX_SSID_LEN]; // WiFi SSID name
         char password[MAX_PASS_LEN]; // WiFi Auth Password
     } AuthInfo;
-
-    // ***** TESTS DATA ONLY****
-    static const byte testData[] = {
-        0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42, 0x4B, 0x44, 0xBB, 0x00, 0x8A, 0xBB, 0xBC, 0x90, 0xA1, 0xFE,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12,
-    };
-    static const byte secretKey[] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
 };
 
 // SoftwareSerial espSerial(Settings::RX, Settings::TX);
@@ -476,29 +449,16 @@ class WiFiConfig
                 Serial.println("[HTTP] Identifying the respective Trust Organization");
                 #endif
 
-                // BLOCK_2_DATA has offset of 8 while TRUST_ORG_DATA has 40.
-                byte offset {(size == Settings::blockSize) ? 8 : 40};
+                // configure the Trust Organization API URL
+                http.begin(client, Settings::SERVER_API_URL);  // HTTP
+                http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-                byte serverID[Settings::ID_SIZE] = {};
-                memcpy(serverID, m_requestBuffer+offset, Settings::ID_SIZE);
+                #ifdef DEBUG
+                Serial.println("[HTTP] Make a POST Request");
+                #endif
 
-                for (byte i {0}; i < Settings::ServerIDsCount; ++i)
-                {
-                    if (memcmp(serverID, Settings::KNOWN_SERVER_IDs[i], Settings::ID_SIZE) == 0)
-                    {
-                        // configure the server and url
-                        http.begin(client, Settings::KNOWN_SERVER_APIs[i]);  // HTTP
-                        http.addHeader("Content-Type", "application/json");
-
-                        #ifdef DEBUG
-                        Serial.println("[HTTP] Make a POST Request");
-                        #endif
-
-                        // start connection and send HTTP header and body
-                        httpCode = http.POST(m_requestBuffer, size);
-                        break;
-                    }
-                }
+                // start connection and send HTTP header and body
+                httpCode = http.POST(m_requestBuffer, size);
             }
 
             if (httpCode < 0) // client error detected.
@@ -518,9 +478,9 @@ class WiFiConfig
 
             // Successful response from the server returned
             if (httpCode == HTTP_CODE_OK)
-                Serial.print(http.getString().c_str());
+                Serial.write(http.getString().c_str());
             else
-                Serial.print(httpErrorCode);
+                Serial.write(httpErrorCode);
 
             http.end();
         }
@@ -533,41 +493,23 @@ class WiFiConfig
             digitalWrite(Settings::LED, HIGH);
 
             // The WiFi connection is active and serial data has been received
-            if (WiFi.status() == WL_CONNECTED && Serial.available())
+            if (WiFi.status() == WL_CONNECTED && Serial.available() > 0)
             {
                 // Switch on builtin status light to indicate API connection activity.
                 digitalWrite(Settings::LED, LOW);
 
-                // First byte always defines the size of byte to be expected.
-                int bufferSize = Serial.read();
+                int readBytes = Serial.readBytes(m_requestBuffer, Settings::MaxReqSize);
 
-                int readBytes {0};
-                while (Serial.available() > 0)
+                // Handle the request based on the data size sent.
+                switch(readBytes)
                 {
-                    if (readBytes < Settings::MaxReqSize && readBytes < bufferSize)
-                        m_requestBuffer[readBytes++] = Serial.read();
-                    else
-                        Serial.read(); // just empty the buffer.
-                }
-
-                // One is subtracted because the first byte is read separately.
-                switch(bufferSize)
-                {
-                    case Settings::SecretKeyAuthDataSize-1:
-                        Serial.write(Settings::secretKey, sizeof(Settings::secretKey));
-                        break;
-                    case Settings::TrustKeyAuthDataSize-1:
-                        Serial.write(Settings::testData, sizeof(Settings::testData));
-
+                    case Settings::SecretKeyAuthDataSize:
+                    case Settings::TrustKeyAuthDataSize:
                         // Ensure the read bytes and expected bytes match otherwise data read is invalid
-                        // handleHttpEvents(bufferSize, bufferSize==readBytes);
-
-                        // Serial.flush(); //Clearing all Serial print
+                        handleHttpEvents(readBytes, true);
                         break;
                     default:
-                        // Invalid first byte about data size found.
-                        // handleHttpEvents(0, false);
-                        Serial.write(0x01);
+                        handleHttpEvents(readBytes, false);  // Invalid data size found.
                 }
             }
         }
@@ -584,14 +526,14 @@ class WiFiConfig
 
 WiFiConfig config{};
 
-// Sets up the WiFi config
+// Sets up the WiFi configuration.
 void setup()
 {
     // Initialize the serial interface.
     Serial.begin(Settings::SERIAL_BAUD_RATE); // Initialize the Arduino serial port
     Serial1.begin(Settings::SERIAL_BAUD_RATE); // Initialize the ESP8266 serial port
 
-    // Serial.setTimeout(200); // Timeout in 200ms
+    Serial.setTimeout(50); // set read bytes timeout to 50ms
 
     // Set the GPIO2 Pin as output and set it LOW.
     pinMode(Settings::LED, OUTPUT);

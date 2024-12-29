@@ -24,6 +24,13 @@
 
 namespace CommonRFID
 {
+    // TODO: A more easier approach to update it should be implemented.
+    constexpr byte DEVICE_ID[] {0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12};
+
+    // SERVER_API_URL defines the trust organisation server API url that this
+    // device supports.
+    static const char* SERVER_API_URL = {"http://dmigwi.atwebpages.com/rfid-based-auth/"};
+
     // SERIAL_BAUD_RATE defines the data communication rate to be used during
     // serial communication.
     constexpr long int SERIAL_BAUD_RATE {115200};
@@ -48,25 +55,23 @@ namespace CommonRFID
 
     // SecretKeyAuthDataSize defines the size of data expected when authenticating
     // block 2 data and subsequently generating the secret key. It contains:
-    // 1 byte => Data size expected minus itself. (first byte)
     // 1 byte => UID size, either of (4/7/10)
     // 10 bytes => card's UID Data
     // 8 bytes => Current PCD's ID
     // 16 bytes => Block 2 Data
-    // In total 36 bytes should be transmitted via the serial communication.
+    // In total 35 bytes should be transmitted via the serial communication.
     // NB: Data is packaged in the order above as from byte zero.
-    constexpr byte SecretKeyAuthDataSize {36};
+    constexpr byte SecretKeyAuthDataSize {35};
 
     // TrustKeyAuthDataSize defines the size of data expected when validating
     // a trust key read from the NFC tag. It contains:
-    // 1 byte => Data size expected minus itself. (first byte)
     // 1 byte => UID size, either of (4/7/10)
     // 10 bytes => card's UID Data
     // 8 bytes => Current PCD's ID
     // 48 bytes => Trust Key Data
-    // In total 68 bytes should be transmitted via the serial communication.
+    // In total 67 bytes should be transmitted via the serial communication.
     // NB: Data is packaged in the order above as from byte zero.
-    constexpr byte TrustKeyAuthDataSize {68};
+    constexpr byte TrustKeyAuthDataSize {67};
 
     // MaxReqSize the maximum size of the data from the serial communication
     // can be read into contagious memory location.

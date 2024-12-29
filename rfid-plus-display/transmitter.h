@@ -41,9 +41,6 @@ namespace Settings
     // Import the common settings configurations here.
     using namespace CommonRFID;
 
-    // TODO: A more easier approach to update it should be implemented.
-    constexpr byte DEVICE_ID[] {0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12};
-
     // keysCount defines the number of default keys to attempt authentication
     // with in new cards.
     constexpr int keysCount {9};

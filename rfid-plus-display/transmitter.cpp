@@ -318,11 +318,10 @@ void Transmitter::readPICC()
     // This order of packaging should never be altered!
     const byte bytesToSend {Settings::SecretKeyAuthDataSize};
     byte dataSent[bytesToSend];
-    dataSent[0] = Settings::SecretKeyAuthDataSize-1; // subtract 1 as byte zero is read separately
-    dataSent[1] = m_rc522.uid.size;                                         // copy card uid size
-    memcpy(dataSent+2, m_rc522.uid.uidByte, 10);                            // copy card uid.
-    memcpy(dataSent+11, deviceIdBuff, sizeof(Settings::DEVICE_ID));  // copy the current PCD ID
-    memcpy(dataSent+19, m_blockAuth.block2Data, Settings::blockSize);       // copy block 2 data
+    dataSent[0] = m_rc522.uid.size;                                     // copy card uid size
+    memcpy(dataSent+1, m_rc522.uid.uidByte, 10);                        // copy card uid.
+    memcpy(dataSent+10, deviceIdBuff, sizeof(Settings::DEVICE_ID));     // copy the current PCD ID
+    memcpy(dataSent+18, m_blockAuth.block2Data, Settings::blockSize);   // copy block 2 data
 
     // Stage 3: Send the block 2 Contents to the trust organization for validation.
     // - Use Serial transmission to send the data to and from the WIFI module.
@@ -421,11 +420,10 @@ void Transmitter::networkConn()
 
     // This order of packaging should never be altered!
     byte txData[Settings::TrustKeyAuthDataSize];
-    txData[0] = Settings::TrustKeyAuthDataSize - 1; // subtract 1 as byte zero is read separately
-    txData[1] = m_rc522.uid.size;                                       // copy card uid size.
-    memcpy(txData+2, m_rc522.uid.uidByte, 10);                          // copy card uid.
-    memcpy(txData+11, Settings::DEVICE_ID, sizeOfDeviceID);             // copy the current PCD ID
-    memcpy(txData+19, m_cardData.readData, Settings::TrustKeySize);     // copy Trust Key data.
+    txData[0] = m_rc522.uid.size;                                       // copy card uid size.
+    memcpy(txData+1, m_rc522.uid.uidByte, 10);                          // copy card uid.
+    memcpy(txData+10, Settings::DEVICE_ID, sizeOfDeviceID);             // copy the current PCD ID
+    memcpy(txData+18, m_cardData.readData, Settings::TrustKeySize);     // copy Trust Key data.
 
     // Serial.println(F(" TrustKey validation contents! "));
     // Serial.println(Settings::TrustKeyAuthDataSize);
