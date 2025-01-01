@@ -472,7 +472,7 @@ class WiFiConfig
             {
                 httpErrorCode = HTTP_SERVER_ERROR;
                 #ifdef DEBUG
-                Serial.printf("[HTTP] POST... failed, Server Error: %s\n", http.errorToString(httpCode).c_str());
+                Serial.printf("[HTTP] POST... failed, Server Error: %d\n", httpCode);
                 #endif
             }
 

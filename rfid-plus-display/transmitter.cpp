@@ -27,8 +27,10 @@ volatile bool onInterrupt {false};
 // void dumpBytes(byte* data, byte count)
 // {
 //      for (byte i = 0; i < count; i++) {
+//             if (data[i] < 0x10)
+//                 Serial.print("0"); // leading zero added when needed.
 //             Serial.print(data[i], HEX);
-//             Serial.print(F(" "));
+//             //Serial.print(F(" "));
 //         }
 //         Serial.println();
 // }
@@ -320,8 +322,12 @@ void Transmitter::readPICC()
     byte dataSent[bytesToSend];
     dataSent[0] = m_rc522.uid.size;                                     // copy card uid size
     memcpy(dataSent+1, m_rc522.uid.uidByte, 10);                        // copy card uid.
-    memcpy(dataSent+10, deviceIdBuff, sizeof(Settings::DEVICE_ID));     // copy the current PCD ID
-    memcpy(dataSent+18, m_blockAuth.block2Data, Settings::blockSize);   // copy block 2 data
+    memcpy(dataSent+11, deviceIdBuff, sizeof(Settings::DEVICE_ID));     // copy the current PCD ID
+    memcpy(dataSent+19, m_blockAuth.block2Data, Settings::blockSize);   // copy block 2 data
+
+    // Serial.println(F(" SecretKey Auth contents! "));
+    // Serial.println(Settings::SecretKeyAuthDataSize);
+    // dumpBytes(dataSent, Settings::SecretKeyAuthDataSize);
 
     // Stage 3: Send the block 2 Contents to the trust organization for validation.
     // - Use Serial transmission to send the data to and from the WIFI module.
@@ -425,8 +431,8 @@ void Transmitter::networkConn()
     byte txData[Settings::TrustKeyAuthDataSize];
     txData[0] = m_rc522.uid.size;                                       // copy card uid size.
     memcpy(txData+1, m_rc522.uid.uidByte, 10);                          // copy card uid.
-    memcpy(txData+10, Settings::DEVICE_ID, sizeOfDeviceID);             // copy the current PCD ID
-    memcpy(txData+18, m_cardData.readData, Settings::TrustKeySize);     // copy Trust Key data.
+    memcpy(txData+11, Settings::DEVICE_ID, sizeOfDeviceID);             // copy the current PCD ID
+    memcpy(txData+19, m_cardData.readData, Settings::TrustKeySize);     // copy Trust Key data.
 
     // Serial.println(F(" TrustKey validation contents! "));
     // Serial.println(Settings::TrustKeyAuthDataSize);
@@ -486,21 +492,24 @@ void Transmitter::writePICC()
     byte startBlock {0};
     byte addr {m_blockAuth.block0Addr};
 
+    // Serial.println(F(" TrustKey contents writing! "));
+    // dumpBytes(m_cardData.readData, Settings::TrustKeySize);
+
     for (;startBlock < blocksToRead && addr < Settings::maxBlockNo; ++addr)
     {
         if ((addr + 1) % Settings::sectorBlocks == 0)
             continue; // Ignore access bit configuration block.
 
-        memcpy(m_cardData.readData+(startBlock* Settings::blockSize), buffer, Settings::blockSize);
+        memcpy(buffer, m_cardData.readData+(startBlock* Settings::blockSize), Settings::blockSize);
+        // Serial.print(F(" Block: "));
+        // Serial.println(startBlock);
+        // dumpBytes(buffer, Settings::blockSize);
         ++startBlock; // Only increment if a data block is read.
 
         m_cardData.status = m_rc522.MIFARE_Write(addr, buffer, Settings::blockSize);
         if (m_cardData.status != MFRC522::STATUS_OK)
             break;
     }
-
-    // Serial.println(F(" TrustKey contents writing! "));
-    // dumpBytes(m_cardData.readData, Settings::TrustKeySize);
 
     if (m_cardData.status == MFRC522::STATUS_OK)
         setDetailsMsg((char*)"Tag writing was successful!  ");
