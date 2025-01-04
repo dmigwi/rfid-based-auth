@@ -182,25 +182,50 @@
             //echo $response; //For postman testing only.
             echo hex2bin(strtoupper($response));
     } else {
-            // Handle GET request.
-    }
-		/*$data = (object)Array("error" => "order_id GET parameter missing");
-                
-		if (!empty($_GET)) {
-                $order_id = $_GET['order_id'];
-                try {
-                        $result = mysqli_query( $con, "SELECT * FROM `transactions2` WHERE order_id=$order_id");
-                        $data = mysqli_fetch_array($result, MYSQLI_ASSOC);
-                         if (!is_null($data)) {
-                                unset($data['id']);
-                        } 
-                } catch (Exception $e) {
-                        $data = (object)Array("error" => "order_id=" . $order_id . " was not found");
+        // Handle GET request.
+        $query = "SELECT hashed_blockdata, rolling_pass, created_on FROM rollingPasswordTable ORDER BY created_on LIMIT 10";
+        $result = mysqli_query($con, $query);
+        
+        echo "<style>
+                table {
+                  font-family: arial, sans-serif;
+                  border-collapse: collapse;
+                  width: 100%;
                 }
-         }*/
 
-		
-        // echo $data;
-		//echo json_encode($_SERVER);
- 		mysqli_close($con);
+                td, th {
+                  border: 1px solid #dddddd;
+                  text-align: left;
+                  padding: 8px;
+                }
+
+                tr:nth-child(even) {
+                  background-color: #dddddd;
+                }
+			</style>";
+        echo "<h1>10 Most Recent Successful RFID Authentications. </h1>";
+         echo "<table>
+            <tr>
+                <th>Created On</th>
+                <th>Hashed BlockData</th>
+                <th>Rolling Password</th>
+            </tr>";
+ 
+        if ($result && mysqli_num_rows($result) > 0) {
+            while($row = mysqli_fetch_assoc($result)) {
+                $datetime = new DateTime($row["created_on"]); 
+                echo "<tr><td>".$datetime->format(DateTimeInterface::RFC2822)."</td>".
+                        "<td>".$row["hashed_blockdata"]. "</td>".
+                        "<td>".$row["rolling_pass"]."</td>".
+                    "</tr>";
+            }
+        }
+
+        echo "</table>";
+        mysqli_free_result($result);
+    }
+
+    // echo $data;
+    //echo json_encode($_SERVER);
+    mysqli_close($con);
 ?>

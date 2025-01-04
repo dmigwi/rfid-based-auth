@@ -201,11 +201,7 @@ void Transmitter::setPICCAuthKeyB(byte* secretKey)
     // A valid Uid can have 4, 7 or 10 bytes. If the Uid has less 4 bytes, the
     // remaining bytes will be defaulted to zero each.
     byte TagUid[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
-    byte bytesToCopy {
-        (m_rc522.uid.size < static_cast<byte>(MFRC522::MF_KEY_SIZE)) ?
-        m_rc522.uid.size :
-        static_cast<byte>(MFRC522::MF_KEY_SIZE)
-    };
+    byte bytesToCopy = min(static_cast<byte>(MFRC522::MF_KEY_SIZE), m_rc522.uid.size);
     memcpy(TagUid, m_rc522.uid.uidByte, bytesToCopy); // copy tag uid bytes.
 
     for (int i {0}; i < MFRC522::MF_KEY_SIZE; ++i)
@@ -309,12 +305,14 @@ void Transmitter::readPICC()
         return;
     }
 
-    byte deviceIdBuff[sizeof(Settings::DEVICE_ID)] = {0, 0, 0, 0, 0, 0, 0, 0};
+    byte deviceIdBuff[sizeof(Settings::DEVICE_ID)];
 
     #ifdef IS_TRUST_ORG
     // Set the actual device ID only during the trust org mode.
     // During the trust org mode, a new secret key is returned if none existed.
     memcpy(deviceIdBuff, Settings::DEVICE_ID, sizeof(Settings::DEVICE_ID));
+    #else
+    memset(deviceIdBuff, 0, sizeof(Settings::DEVICE_ID));
     #endif
 
     // This order of packaging should never be altered!
