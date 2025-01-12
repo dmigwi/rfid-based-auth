@@ -22,10 +22,18 @@
 
 #include "arduino.h"
 
+// IS_TRUST_ORG flag is used to indicate that the current PCD mode allows a trust
+// organization to over write blank memory space if no previous Trust Key exists.
+// #define IS_TRUST_ORG
+
 namespace CommonRFID
 {
     // TODO: A more easier approach to update it should be implemented.
+    #ifdef IS_TRUST_ORG
+    constexpr byte DEVICE_ID[] {0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0xab};
+    #else
     constexpr byte DEVICE_ID[] {0xef, 0x12, 0x34, 0x56, 0xab, 0xcd, 0xef, 0x12};
+    #endif
 
     // SERVER_API_URL defines the trust organisation server API url that this
     // device supports.

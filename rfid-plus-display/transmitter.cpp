@@ -350,7 +350,7 @@ void Transmitter::readPICC()
     }
 
     // Serial.println(F(" Returned SecretKey contents! "));
-    // dumpBytes(secretKey, MFRC522::MF_KEY_SIZE);
+    // dumpBytes(secretKey, bytesRead);
 
     // KeyB needs to be computed using the successfully read secret key.
     // KeyA only has read-only permissions to block 2 address while KeyB has both

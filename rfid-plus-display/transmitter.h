@@ -28,10 +28,6 @@
 
 #include "commonRFID.h"
 
-// IS_TRUST_ORG flag is used to indicate that the current PCD mode allows a trust
-// organization to over write blank memory space if no previous Trust Key exists.
-// #define IS_TRUST_ORG
-
 // onInterrupt is declared as a global variable that is set to true once an
 // interrupt by the RFID module is recorded.
 extern volatile bool onInterrupt;
