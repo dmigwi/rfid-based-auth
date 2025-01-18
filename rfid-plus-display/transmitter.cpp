@@ -290,9 +290,9 @@ void Transmitter::readPICC()
     if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
         // The card has not been reprogrammed before with its UID based key.
-        for (byte i {0}; i < Settings::keysCount; ++i)
+        for (auto keyA : Settings::defaultPICCKeyAs)
         {
-            attemptBlock2Auth(m_blockAuth, Settings::defaultPICCKeyAs[i]);
+            attemptBlock2Auth(m_blockAuth, keyA);
             if (m_blockAuth.status == MFRC522::STATUS_OK)
                 break; // A key that works has been identified, break the loop.
         }
@@ -343,14 +343,14 @@ void Transmitter::readPICC()
 
     // Handle narrowing conversion
     byte bytesRead { static_cast<byte>(Serial1.readBytes(secretKey, MFRC522::MF_KEY_SIZE))};
+    // Serial.println(F(" Returned SecretKey contents! "));
+    // dumpBytes(secretKey, bytesRead);
+
     if (bytesRead != MFRC522::MF_KEY_SIZE)
     {
         setDetailsMsg((char*)"Fetching the Secret Key failed. Try another tag!  ");
         return;
     }
-
-    // Serial.println(F(" Returned SecretKey contents! "));
-    // dumpBytes(secretKey, bytesRead);
 
     // KeyB needs to be computed using the successfully read secret key.
     // KeyA only has read-only permissions to block 2 address while KeyB has both
@@ -446,7 +446,7 @@ void Transmitter::networkConn()
     }
 
     // Delay to cover the network latency between the server and WiFi module.
-    delay(Settings::REFRESH_DELAY);
+    // delay(Settings::REFRESH_DELAY);
 
     // read the bytes sent back from the WIFI module.
     size_t bytesRead {Serial1.readBytes(txData, Settings::TrustKeySize)};
@@ -571,7 +571,7 @@ void Transmitter::handleDetectedCard()
 // NB: Feature only works in the Trust Organization Mode.
 MFRC522::StatusCode Transmitter::setUidBasedKey()
 {
-    MFRC522::StatusCode status = MFRC522::STATUS_ERROR;
+    MFRC522::StatusCode status = MFRC522::STATUS_OK;
     #ifdef IS_TRUST_ORG
     if (m_blockAuth.isCardNew)
     {

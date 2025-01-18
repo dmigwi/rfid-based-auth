@@ -37,11 +37,20 @@ namespace Settings
     // Import the common settings configurations here.
     using namespace CommonRFID;
 
+    // KeyA defines the default hardcoded key that has read only to read block 2
+    // contents in a trust key sector during the first pass of the
+    // authentication process. i.e (DA 91 E7 A4 3B 45)
+    static const MFRC522::MIFARE_Key KeyA = {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x45};
+
+    #ifdef IS_TRUST_ORG
     // keysCount defines the number of default keys to attempt authentication
     // with in new cards.
     constexpr int keysCount {9};
 
-    #ifdef IS_TRUST_ORG
+    // accessBitsCount defines the number of access control bit in the sector
+    // trailer block.
+    constexpr byte accessBitsCount {3};
+
     // defaultPICCKeyAs defines the common/default keys used to access blocks.
     // THIS KEY SHOULD ONLY BE USED DURING THE Trust Organization MODE ONLY!.
     // https://github.com/nfc-tools/libnfc/blob/0e8cd450e1ad467b845399d55f6322a39c072b44/utils/nfc-mfclassic.c#L82-L92
@@ -57,15 +66,6 @@ namespace Settings
         {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // 00 00 00 00 00 00
         {0xab, 0xcd, 0xef, 0x12, 0x34, 0x56}, // AB CD EF 12 34 56
     };
-    #endif
-
-    // KeyA defines the default hardcoded key that has read only to read block 2
-    // contents in a trust key sector during the first pass of the
-    // authentication process. i.e (DA 91 E7 A4 3B 42)
-    static const MFRC522::MIFARE_Key KeyA = {0xDA, 0x91, 0xE7, 0xA4, 0x3B, 0x42};
-
-     #ifdef IS_TRUST_ORG
-    constexpr byte accessBitsCount {3};
 
     // AccessBits configure the read and write permissions of each block in a sector.
     // Sector K - Sector to be used to store a Trust Key.
@@ -74,7 +74,7 @@ namespace Settings
     //     block 2 – data block        |    Read: KeyA/KeyB, Write: KeyA/KeyB
     //     block 3 – sector trailer    |    Read: Never,     Write: Only KeyB
     static const byte AccessBits[accessBitsCount] = {0x4B, 0x44, 0xBB};
-     #endif
+    #endif
 
     // Since all Mifare classics NFC chip have consistent a block organisations
     // between sectors 0 and 16. The read/write operation will only consider the

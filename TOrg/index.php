@@ -15,12 +15,20 @@
         return hash("sha256", strtoupper($data));
     }
 
+    $default_trustkey = sha256hash("The only thing we have to fear is fear itself!🫣");
+    $default_block2data = md5hash("thayu!🥸");
+
 	function insertTrustKey ($new_trustkey, $deviceUid, $secretKeyId) {
         try {
             global $con;
             global $trustOrgId;
+            global $default_block2data;
+            global $default_trustkey;
 
-            $new_block2data = md5hash($trustOrgId . $deviceUid);
+            $new_block2data = $default_block2data;
+            if ($new_trustkey != $default_trustkey) {
+                $new_block2data = md5hash($trustOrgId . $deviceUid);
+            }
             //echo " * new block2data :".$new_block2data. "\n";
 
             $sql = "INSERT INTO `rollingPasswordTable` (hashed_blockdata, rolling_pass, secret_key_id) VALUES('%s', '%s', '%d')";
@@ -67,7 +75,6 @@
 
         $hashed_tag_uid = "";
         $device_uid = "";
-        $default_trustkey = sha256hash("Who let the dogs out!");
 
         // Data packing
         if (strlen($data) >= 19) {
@@ -114,9 +121,9 @@
                     $hashed_block2data = md5hash(bin2hex(substr($data, 19, 16)));
                     //echo " -block2data :".$hashed_block2data. "\n";
 
-                    $query = "SELECT id FROM `rollingPasswordTable` WHERE hashed_blockdata='%s' ".
+                    $query = "SELECT id FROM `rollingPasswordTable` WHERE hashed_blockdata IN ('%s', '%s') ".
                             "ORDER BY created_on DESC LIMIT 1";
-                    $query = sprintf($query, $hashed_block2data);
+                    $query = sprintf($query, $hashed_block2data, $default_block2data);
                     $result = mysqli_query($con, $query);
 
                     //echo " Query: ".$query. " \n";
@@ -144,9 +151,9 @@
                 // picks only the most recent trust key insert for authentication.
                 $query = "SELECT t.s FROM (".
                 			"SELECT `secret_key_id` as s, `rolling_pass` as r  from `rollingPasswordTable` as m ".
-                        	"WHERE m.hashed_blockdata='%s' ORDER BY m.created_on DESC LIMIT 1".
+                        	"WHERE m.hashed_blockdata IN ('%s', '%s') ORDER BY m.created_on DESC LIMIT 1".
                         ") as t WHERE t.r IN ('%s', '%s')";
-                $query = sprintf($query, $old_block2data, $default_trustkey, $old_trustkey);
+                $query = sprintf($query, $old_block2data, $default_block2data, $default_trustkey, $old_trustkey);
                 $result = mysqli_query($con, $query);
                 //echo $query . " \n";
 

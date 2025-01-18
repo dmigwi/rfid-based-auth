@@ -35,7 +35,7 @@ int main(void)
     Serial.begin(Settings::SERIAL_BAUD_RATE);
     Serial1.begin(Settings::SERIAL_BAUD_RATE);
 
-    // Wait for at least 800ms before timing out a serial1 readbytes operation.
+    // Wait for refresh delay before timing out a serial1 readbytes operation.
     Serial1.setTimeout(Settings::REFRESH_DELAY);
 
     // LCD Pins Configuration
