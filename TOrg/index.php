@@ -3,9 +3,11 @@
 
 	// Unique trust organization id
 	$trustOrgId = "123456ABCDEF12A1";
-	$response = "";
+
+	$bin_response = "";
 	$inTrustOrgMode = false;
-	$deviceExists = false;
+    $default_block2data_salt = "thayu!🥸";
+    $default_trustkey_salt = "The only thing we have to fear is fear itself!🫣";
 
 	function md5hash($data) {
         return hash("md5", strtoupper($data));
@@ -15,29 +17,19 @@
         return hash("sha256", strtoupper($data));
     }
 
-    $default_trustkey = sha256hash("The only thing we have to fear is fear itself!🫣");
-    $default_block2data = md5hash("thayu!🥸");
-
-	function insertTrustKey ($new_trustkey, $deviceUid, $secretKeyId) {
+	function insertTrustKey ($new_block2data, $new_trustkey, $deviceUid, $secretKeyId) {
         try {
             global $con;
             global $trustOrgId;
-            global $default_block2data;
-            global $default_trustkey;
 
-            $new_block2data = $default_block2data;
-            if ($new_trustkey != $default_trustkey) {
-                $new_block2data = md5hash($trustOrgId . $deviceUid);
-            }
-            //echo " * new block2data :".$new_block2data. "\n";
-
-            $sql = "INSERT INTO `rollingPasswordTable` (hashed_blockdata, rolling_pass, secret_key_id) VALUES('%s', '%s', '%d')";
+            $sql = "INSERT INTO `rollingPasswordTable` (hashed_blockdata, rolling_pass, secret_key_id) ".
+                        "VALUES('%s', '%s', '%d')";
             $sql = sprintf($sql, $new_block2data, $new_trustkey, $secretKeyId);
             //echo $sql;
 
             if (mysqli_query($con, $sql)) {
                 // new Trust Key Will be:
-                return $new_trustkey . $trustOrgId . $deviceUid;
+                return  hextobin($new_trustkey) . hextobin($trustOrgId) . hextobin($deviceUid);
             }
         } catch (Exception $e) {
             //echo $e;
@@ -45,13 +37,13 @@
         return "";
     };
 
-	function findDevice($device_uid) {
+	function findDevice($PCD_uid) {
+        $deviceExists = false;
         try {
             global $con;
             global $inTrustOrgMode;
-            global $deviceExists;
 
-            $query = "SELECT is_trust_org FROM `devicesTable` WHERE device_id='$device_uid'";
+            $query = "SELECT is_trust_org FROM `devicesTable` WHERE device_id='$PCD_uid'";
             $result = mysqli_query($con, $query);
 
             $deviceExists = ($result && mysqli_num_rows($result) > 0);
@@ -64,61 +56,68 @@
         } catch (Exception $e) {
             //echo $e;
         }
+        return $deviceExists;
     }
 
 	if ($_SERVER["REQUEST_METHOD"] == "POST") {
         // Handle POST request.
 
-        $data = file_get_contents('php://input');
-        //$data = hex2bin($data); // For postman testing only.
-        //echo "Raw data :" . bin2hex($data). "\n";
+        $bin_input = file_get_contents('php://input');
+        //$bin_input = hex2bin($bin_input); // For postman testing only.
+        //echo "Raw data :" . bin2hex($bin_input). "\n";
 
+        $PCD_uid = "";
         $hashed_tag_uid = "";
-        $device_uid = "";
 
         // Data packing
-        if (strlen($data) >= 19) {
-            $uid_size = hexdec(bin2hex(substr($data, 0, 1)));
-            $hashed_tag_uid = md5hash(bin2hex(substr($data, 1, $uid_size)));
-            $device_uid = bin2hex(substr($data, 11, 8));
+        if (strlen($bin_input) >= 19) {
+            $PCD_uid = bin2hex(substr($bin_input, 11, 8));
+            $uid_size = hexdec(bin2hex(substr($bin_input, 0, 1)));
+            $hashed_tag_uid = md5hash(bin2hex(substr($bin_input, 1, $uid_size)));
         }
 
         try {
-            findDevice($device_uid);
+            if (!findDevice($PCD_uid)) { // PCD provided doesn't exist terminate further progress.
+                $bin_input = "";
+                $bin_response = "Hacking Attempt!";
+            }
             //echo "content length: " . $_SERVER["CONTENT_LENGTH"]. "\n";
-            //echo "string length: " . strlen($data). "\n";
+            //echo "string length: " . strlen($bin_input). "\n";
 
-            // Content length for secret key authentication is 35 (in Ascii format)
-            if ($_SERVER["CONTENT_LENGTH"] >= 35 && strlen($data) == 35) {
+            /* ------------------------------------------------------------- *
+                API Content length for secret key authentication endpoint is 35 bytes.
+            * ------------------------------------------------------------- */
+            if ($_SERVER["CONTENT_LENGTH"] >= 35 && strlen($bin_input) == 35) {
 
+                $default_block2data = md5hash($default_block2data_salt.$hashed_tag_uid);
                 $query = "SELECT secret_key FROM `secretKeysTable` WHERE hashed_tag_uid='$hashed_tag_uid'";
                 $result = mysqli_query($con,$query);
 
                 if (mysqli_num_rows($result) > 0) {
-                    $response = mysqli_fetch_row($result)[0];
+                    $bin_response = hex2bin(mysqli_fetch_row($result)[0]);
                 }
                 mysqli_free_result($result);
-                //echo " Secret Key: ".$response. " \n";
+                //echo " Secret Key: ".bin2hex($bin_response). " \n";
 
-
-                if (empty($response) && $inTrustOrgMode) { // new card update by trust organization pcd.
+                if (empty($bin_response) && $inTrustOrgMode) { // new card update by trust organization pcd.
                     $secret_key = substr(md5hash(random_bytes(8).$hashed_tag_uid), 0, 12);
                     $query = "INSERT INTO `secretKeysTable` (hashed_tag_uid, secret_key) VALUES('%s', '%s')";
 
                     $query = sprintf($query, $hashed_tag_uid, $secret_key);
                     if (mysqli_query($con, $query)) {
-                            $response = $secret_key;
+                            $bin_response = hex2bin($secret_key);
                     }
 
                     $secret_key_id = mysqli_insert_id($con);
+                    $default_trustkey = sha256hash($default_trustkey_salt.$hashed_tag_uid)
 
                     // Also insert default trust key entry.
-                    insertTrustKey($default_trustkey, $device_uid, $secret_key_id);
+                    insertTrustKey($default_block2data, $default_trustkey, $PCD_uid, $secret_key_id);
                 }
 
-                if (!empty($response)) { // Previous entry exists, validate block 2 data now.
+                if (!empty($bin_response)) { // Previous entry exists, validate block 2 data now.
 
-                    $hashed_block2data = md5hash(bin2hex(substr($data, 19, 16)));
+                    $hashed_block2data = md5hash(bin2hex(substr($bin_input, 19, 16)));
                     //echo " -block2data :".$hashed_block2data. "\n";
 
                     $query = "SELECT id FROM `rollingPasswordTable` WHERE hashed_blockdata IN ('%s', '%s') ".
@@ -129,23 +128,25 @@
                     //echo " Query: ".$query. " \n";
 
                     if (!$result || mysqli_num_rows($result) != 1){
-                        $response = ""; // Unexpected error occured
+                        $bin_response = ""; // Unexpected error occured
                     }
 
                     mysqli_free_result($result);
                 } else {
                     // An error occured and the secret key couldn't be retrieved or it doesn't exist.
-                    $response = bin2hex("Malformed request body found!-04");
+                    $bin_response = "Malformed request!-05";
                 }
             }
+            /* ------------------------------------------------------------- *
+                API Content length for trust key authentication endpoint is 67
+            * ------------------------------------------------------------- */
+            elseif ($_SERVER["CONTENT_LENGTH"] >= 67 && strlen($bin_input) == 67) {
 
-            if ($_SERVER["CONTENT_LENGTH"] >= 67 && strlen($data) == 67) {
-                // Content length for trust key authentication is 67
-
-                $prevTrustKeyMatches = false;
                 // Validate if the full trust key matches the stored ones.
-                $old_trustkey = bin2hex(substr($data, 19, 32));
-                $old_block2data  = md5hash(bin2hex(substr($data, 51, 16)));
+                $old_trustkey = bin2hex(substr($bin_input, 19, 32));
+                $old_block2data  = md5hash(bin2hex(substr($bin_input, 51, 16)));
+                $default_block2data = md5hash($default_block2data_salt.$hashed_tag_uid);
+                $default_trustkey = sha256hash($default_trustkey_salt.$hashed_tag_uid)
                 //echo " --block2data :".$old_block2data. "\n";
 
                 // picks only the most recent trust key insert for authentication.
@@ -160,30 +161,27 @@
                 $secret_key_id = -1;
                 if ($result && mysqli_num_rows($result) > 0) {
                     $secret_key_id = mysqli_fetch_row($result)[0];
-                    $prevTrustKeyMatches = true;
                 }
 
                 mysqli_free_result($result);
 
-                // Validate the device uid provided if it is among the supported.
-                if($deviceExists && $secret_key_id != -1) {
-                    if ($prevTrustKeyMatches || $inTrustOrgMode) {
-                        $new_trustkey = sha256hash(random_bytes(8).$old_trustkey);
-                        $response = insertTrustKey($new_trustkey, $device_uid, $secret_key_id);
-                    }
+                if($secret_key_id != -1 || $inTrustOrgMode) {
+                    $new_block2data = md5hash($trustOrgId . $deviceUid);
+                    $new_trustkey = sha256hash(random_bytes(8) . $old_trustkey);
+                    $bin_response = insertTrustKey($new_block2data, $new_trustkey, $PCD_uid, $secret_key_id);
                 }
 
-                if (empty($response)){
+                if (empty($bin_response)){
                     // An error occured and the secret key couldn't be retrieved or it doesn't exist.
-                    $response = bin2hex("Malformed request body found!-05");
+                    $bin_response = "Malformed request!-06";
                 }
             }
         } catch (Exception $e) {
             //echo $e;
         }
 
-        //echo $response; //For postman testing only.
-        echo hex2bin($response);
+        //echo bin2hex($bin_response); //For postman testing only.
+        echo $bin_response;
     } else {
         // Handle GET request.
         $page = 1;
@@ -194,9 +192,9 @@
         $offset = ($page-1) * 10;
 
         try {
-            $query = "SELECT hashed_blockdata, rolling_pass, created_on FROM rollingPasswordTable ORDER BY created_on DESC LIMIT 10 OFFSET ".$offset;
+            $query = "SELECT hashed_blockdata, rolling_pass, created_on FROM `rollingPasswordTable` ".
+                    "ORDER BY created_on DESC LIMIT 20 OFFSET ".$offset;
             $result = mysqli_query($con, $query);
-
             $data = array();
 
             if ($result && mysqli_num_rows($result) > 0) {

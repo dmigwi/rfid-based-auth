@@ -61,8 +61,8 @@ namespace CommonRFID
     // then 3 consecutive blocks will be adequate to store 384 bit/ 48 bytes.
     constexpr byte TrustKeySize{48};
 
-    // SecretKeyAuthDataSize defines the size of data expected when authenticating
-    // block 2 data and subsequently generating the secret key. It contains:
+    // SecretKeyAuthDataSize defines the size of API data sent from PCD to the backend
+    // servers when authenticating block 2 data. It contains:
     // 1 byte => UID size, either of (4/7/10)
     // 10 bytes => card's UID Data
     // 8 bytes => Current PCD's ID
@@ -71,8 +71,8 @@ namespace CommonRFID
     // NB: Data is packaged in the order above as from byte zero.
     constexpr byte SecretKeyAuthDataSize {35};
 
-    // TrustKeyAuthDataSize defines the size of data expected when validating
-    // a trust key read from the NFC tag. It contains:
+    // TrustKeyAuthDataSize defines the size of API data sent from PCD to the backend
+    // servers when validating a trust key read from the NFC tag. It contains:
     // 1 byte => UID size, either of (4/7/10)
     // 10 bytes => card's UID Data
     // 8 bytes => Current PCD's ID

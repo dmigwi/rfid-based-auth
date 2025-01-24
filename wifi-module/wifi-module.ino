@@ -533,8 +533,6 @@ void setup()
     Serial.begin(Settings::SERIAL_BAUD_RATE); // Initialize the Arduino serial port
     Serial1.begin(Settings::SERIAL_BAUD_RATE); // Initialize the ESP8266 serial port
 
-    Serial.setTimeout(30); // set read bytes timeout to 30ms
-
     // Set the GPIO2 Pin as output and set it LOW.
     pinMode(Settings::LED, OUTPUT);
     digitalWrite(Settings::LED, LOW);
@@ -568,7 +566,8 @@ void setup()
             Serial.write(Settings::READY_SIGNAL);
             break; // exit the loop
         }
-       blinkBuiltinLED(Settings::REFRESH_DELAY);
+       // The loop interval timer is 1 sec + 100ms (700/7);
+       blinkBuiltinLED(Settings::REFRESH_DELAY/7);
     }
 
     // empty the buffer if there exists unread data. This prevents the unread
@@ -577,6 +576,10 @@ void setup()
         Serial.read();
 
     digitalWrite(Settings::LED, LOW); // Turn off the LED after blinking
+
+    // Timeout is reduced from the default 1 seconds to 30ms because http responses
+    // recieved do not require a lot time to read the body contents.
+    Serial.setTimeout(30); // set read bytes timeout to 30ms
 }
 
 void loop()

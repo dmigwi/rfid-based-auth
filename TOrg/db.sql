@@ -6,7 +6,7 @@ CREATE TABLE `devicesTable` (
     `updated_on` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `device_id` (`device_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `secretKeysTable` (
     `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -16,7 +16,7 @@ CREATE TABLE `secretKeysTable` (
     `updated_on` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `hashed_tag_uid` (`hashed_tag_uid`)
-) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `rollingPasswordTable` (
     `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -29,7 +29,4 @@ CREATE TABLE `rollingPasswordTable` (
     KEY `fk_constraint` (`secret_key_id`),
     KEY `created_on` (`created_on`),
     CONSTRAINT `fk_constraint` FOREIGN KEY (`secret_key_id`) REFERENCES `secretKeysTable` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-ALTER TABLE `secretKeysTable` AUTO_INCREMENT=1;
-ALTER TABLE `rollingPasswordTable` AUTO_INCREMENT=1;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

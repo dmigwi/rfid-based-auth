@@ -22,6 +22,10 @@
 // Assigns the global variable an initial value of false.
 volatile bool onInterrupt {false};
 
+///////////////////////////////////////////////////
+// General Purpose Functions
+//////////////////////////////////////////////////
+
 // // ****Function used for debug purposes Only!****
 // // dumpBytes dumps the buts on the serial output.
 // void dumpBytes(byte* data, byte count)
@@ -34,6 +38,18 @@ volatile bool onInterrupt {false};
 //         }
 //         Serial.println();
 // }
+
+// sendSerialData emptys the Serial1 buffer before writting new content to it.
+// The data written is serially accessible to the Wi-Fi Module.
+void sendSerialData(byte* data, byte dataSize)
+{
+    // Make the serial transfer of the complete data.
+    // Before writing into Serial1 cleanup its buffer first.
+    while(Serial1.available() > 0)
+        Serial1.read(); // reads till the buffer is empty.
+
+    Serial1.write(data, dataSize); // Write the data into the serial transmission.
+}
 
 ///////////////////////////////////////////////////
 // Display Class Members
@@ -305,38 +321,31 @@ void Transmitter::readPICC()
         return;
     }
 
-    byte deviceIdBuff[sizeof(Settings::DEVICE_ID)];
+    const int sizeOfDeviceID {sizeof(Settings::DEVICE_ID)};
+    byte deviceIdBuff[sizeOfDeviceID];
 
     #ifdef IS_TRUST_ORG
     // Set the actual device ID only during the trust org mode.
     // During the trust org mode, a new secret key is returned if none existed.
-    memcpy(deviceIdBuff, Settings::DEVICE_ID, sizeof(Settings::DEVICE_ID));
+    memcpy(deviceIdBuff, Settings::DEVICE_ID, sizeOfDeviceID);
     #else
-    memset(deviceIdBuff, 0, sizeof(Settings::DEVICE_ID));
+    memset(deviceIdBuff, 0, sizeOfDeviceID);
     #endif
 
     // This order of packaging should never be altered!
-    const byte bytesToSend {Settings::SecretKeyAuthDataSize};
-    byte dataSent[bytesToSend];
-    dataSent[0] = m_rc522.uid.size;                                     // copy card uid size
-    memcpy(dataSent+1, m_rc522.uid.uidByte, 10);                        // copy card uid.
-    memcpy(dataSent+11, deviceIdBuff, sizeof(Settings::DEVICE_ID));     // copy the current PCD ID
-    memcpy(dataSent+19, m_blockAuth.block2Data, Settings::blockSize);   // copy block 2 data
+    byte txData[Settings::SecretKeyAuthDataSize];
+    txData[0] = m_rc522.uid.size;                                     // copy card uid size
+    memcpy(txData+1, m_rc522.uid.uidByte, 10);                        // copy card uid.
+    memcpy(txData+11, deviceIdBuff, sizeOfDeviceID);                  // copy the current PCD ID
+    memcpy(txData+19, m_blockAuth.block2Data, Settings::blockSize);   // copy block 2 data
+
+    // Stage 3: Send the block 2 Contents to the trust organization for validation.
+    // - Use Serial transmission to send the block 2 data to the WIFI module.
+    sendSerialData(txData, Settings::SecretKeyAuthDataSize);
 
     // Serial.println(F(" SecretKey Auth contents! "));
     // Serial.println(Settings::SecretKeyAuthDataSize);
-    // dumpBytes(dataSent, Settings::SecretKeyAuthDataSize);
-
-    // Stage 3: Send the block 2 Contents to the trust organization for validation.
-    // - Use Serial transmission to send the data to and from the WIFI module.
-    {
-        // Before writing into Serial1 cleanup its buffer first.
-        while(Serial1.available() > 0)
-            Serial1.read(); // reads till the buffer is empty.
-
-        // Send block 2 address data and size.
-        Serial1.write(dataSent, bytesToSend);
-    }
+    // dumpBytes(txData, Settings::SecretKeyAuthDataSize);
 
     // Request the secret key sent from the trust organization.
     byte secretKey[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
@@ -432,24 +441,16 @@ void Transmitter::networkConn()
     memcpy(txData+11, Settings::DEVICE_ID, sizeOfDeviceID);             // copy the current PCD ID
     memcpy(txData+19, m_cardData.readData, Settings::TrustKeySize);     // copy Trust Key data.
 
+    // Send the Trust Key data to the Wi-Fi Module via Serial transmission.
+    sendSerialData(txData, Settings::TrustKeyAuthDataSize);
+
     // Serial.println(F(" TrustKey validation contents! "));
     // Serial.println(Settings::TrustKeyAuthDataSize);
     // dumpBytes(txData, Settings::TrustKeyAuthDataSize);
 
-    // Make the serial transfer of the complete data.
-    {
-        // Before writing into Serial1 cleanup its buffer first.
-        while(Serial1.available() > 0)
-            Serial1.read(); // reads till the buffer is empty.
-
-        Serial1.write(txData, Settings::TrustKeyAuthDataSize); // Write the data into the serial transmission.
-    }
-
-    // Delay to cover the network latency between the server and WiFi module.
-    // delay(Settings::REFRESH_DELAY);
-
     // read the bytes sent back from the WIFI module.
-    size_t bytesRead {Serial1.readBytes(txData, Settings::TrustKeySize)};
+    const int expectedBytesCount {Settings::TrustKeySize};
+    size_t bytesRead {Serial1.readBytes(txData, expectedBytesCount)};
 
     // Serial.println(F(" TrustKey returned contents! "));
     // Serial.println(bytesRead);
@@ -458,19 +459,22 @@ void Transmitter::networkConn()
     // For a successful Network Data read:
     // 1. Bytes read must match the match the size of a trust key.
     // 2. Device ID uid returned must match the existing one.
-    if (bytesRead == Settings::TrustKeySize)
+    if (bytesRead == expectedBytesCount)
     {
         byte returnedDeviceID[sizeOfDeviceID];
-        memcpy(returnedDeviceID, txData+40, sizeOfDeviceID); // copy device uid.
+        // The last 8 bytes of the expectedBytesCount holds the deviceUiD bytes.
+        // Thus Starting byte is obtained by subtracting 8 from expectedBytesCount;
+        memcpy(returnedDeviceID, txData+(expectedBytesCount-sizeOfDeviceID), sizeOfDeviceID); // copy device uid.
 
         // Serial.println(F(" Copied Device ID contents! "));
         // dumpBytes(returnedDeviceID, sizeOfDeviceID);
 
         if (memcmp(returnedDeviceID, Settings::DEVICE_ID, sizeOfDeviceID) == 0)
         {
+            m_cardData.status = MFRC522::STATUS_OK;                      // update status
+            memcpy(m_cardData.readData, txData, Settings::TrustKeySize); // update trust key
+
             setDetailsMsg((char*)"Network connection was successful!  ");
-            m_cardData.status = MFRC522::STATUS_OK; // update status
-            memcpy(m_cardData.readData, txData, Settings::TrustKeySize); // update the new card data
             return;
         }
     }
