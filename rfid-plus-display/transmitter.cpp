@@ -121,6 +121,8 @@ void Display::setStatusMsg(MachineState state, bool displayNow = false)
     // Triggers immediate screen update if true.
     if (displayNow)
         printScreen();
+
+    Serial.println(stateToStatus(state));
 }
 
 // setDetailsMsg sets the details message that is to be displayed on Row 2.
@@ -199,7 +201,18 @@ Transmitter::Transmitter( byte RFID_SS, byte RFID_RST, // RFID control pins
     m_rc522.PCD_Init();     // Init MFRC522 Library.
 
     // Allow all the MFRC522 init function to finish execution.
-    delay(Settings::REFRESH_DELAY);
+    timerDelay(Settings::REFRESH_DELAY);
+}
+
+// timerDelay enables a responsive user interface instead of a screen
+// freeze when a lengthy delay is required.
+void Transmitter::timerDelay(int timeDelay)
+{
+    for (int tc {0}; tc <= timeDelay; tc += Settings::REFRESH_DELAY)
+    {
+        printScreen(); // make the screen responsive
+        delay(Settings::REFRESH_DELAY); // handle the actual delay.
+    }
 }
 
 // isNewCardDetected returns true for the new card detected and their
@@ -317,7 +330,8 @@ void Transmitter::readPICC()
 
     if (m_blockAuth.status != MFRC522::STATUS_OK)
     {
-        setDetailsMsg((char*)"KeyA validity failed. Try another tag!  ");
+        // mutual authentication failed between all entities involved.
+        setDetailsMsg((char*)"Key validity failed. Try another tag!  ");
         return;
     }
 
@@ -524,12 +538,13 @@ void Transmitter::writePICC()
 // on a PICC completes.
 void Transmitter::cleanUpAfterCardOps()
 {
-    delay(Settings::AUTH_DELAY); // Delay before making another PICC selection.
+    // Handle a responsive delay before making more PICC selection.
+    timerDelay(Settings::AUTH_DELAY);
 
     // Set interrupt as successfully handled.
     resetInterrupt();
 
-    // disable the interrupt till it is activated again.
+    // disable the interrupt flag till it is activated again.
     onInterrupt = false;
 
     // Move the PICC from Active state to Idle after processing is done.
@@ -537,6 +552,10 @@ void Transmitter::cleanUpAfterCardOps()
 
     // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
     m_rc522.PCD_StopCrypto1();
+
+    // Reset the machine state to standy by indicating that the device is ready
+    // to handle another PICC selected.
+    setStatusMsg(StandBy);
 }
 
 // handleDetectedCard on detecting an NFC card within the field, an interrupt
@@ -560,14 +579,10 @@ void Transmitter::handleDetectedCard()
         if (m_cardData.status == MFRC522::STATUS_OK)
             m_cardData.status = setUidBasedKey(); // Upgrade Key if the card is new.
         #endif
-
-        // Handle clean up after the card operations.
-        cleanUpAfterCardOps();
     }
 
-    // Reset the machine state to standy by indicating that the device is ready
-    // to handle another PICC selected.
-    setStatusMsg(StandBy);
+    // Handle clean up after the card operations.
+    cleanUpAfterCardOps();
 }
 
 // setUidBasedKey replaces the non-uid base key with a Uid based which is

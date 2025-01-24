@@ -102,16 +102,13 @@ int main(void)
     rfid.enableInterrupts(); // enable interrupts on IRQ pin.
     onInterrupt = false;
 
-    delay(Settings::REFRESH_DELAY); // Prepare to move state machine to standby state.
+    rfid.timerDelay(Settings::REFRESH_DELAY); // Prepare to move state machine to standby state.
 
     // Configuration has been successful thus state can be moved to the Standby.
     rfid.setStatusMsg(Display::StandBy, false);
     rfid.setDetailsMsg((char*)"The weather today is too cold for me (:!  ", true);
 
 	for(;;) {
-        // Print to the display
-        rfid.printScreen();
-
         if (onInterrupt)
             // Handle the interrupt if it has been detected.
             rfid.handleDetectedCard();
@@ -120,7 +117,8 @@ int main(void)
             // can confirm if there is an interrupt to be handled.
             rfid.activateTransmission();
 
-        delay(Settings::REFRESH_DELAY);
+        // Timer delay also prints the contents to the display.
+        rfid.timerDelay(Settings::REFRESH_DELAY);
 	}
 
 	return 0;

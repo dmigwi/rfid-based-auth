@@ -219,6 +219,10 @@ class Transmitter: public Display
             Display& view
         );
 
+        // timerDelay enables a responsive user interface face instead of a screen
+        // freeze when a delay is required.
+        void timerDelay(int timeDelay);
+
         // isNewCardDetected returns true for the new card detected and their
         // respective serial numbers can be read.
         bool isNewCardDetected();
