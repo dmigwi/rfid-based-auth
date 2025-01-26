@@ -122,7 +122,7 @@ void Display::setStatusMsg(MachineState state, bool displayNow = false)
     if (displayNow)
         printScreen();
 
-    Serial.println(stateToStatus(state));
+    // Serial.println(stateToStatus(state));
 }
 
 // setDetailsMsg sets the details message that is to be displayed on Row 2.
@@ -219,6 +219,11 @@ void Transmitter::timerDelay(int timeDelay)
 // respective serial numbers can be read.
 bool Transmitter::isNewCardDetected()
 {
+    // The two functions below are invoked twice to clear the false postive
+    // STATUS_TIMEOUT error they return if only invoked once.
+    bool isPresent {m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial()};
+    if (isPresent)
+        return true;
     return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
 }
 
@@ -538,20 +543,20 @@ void Transmitter::writePICC()
 // on a PICC completes.
 void Transmitter::cleanUpAfterCardOps()
 {
-    // Handle a responsive delay before making more PICC selection.
-    timerDelay(Settings::AUTH_DELAY);
-
     // Set interrupt as successfully handled.
     resetInterrupt();
 
     // disable the interrupt flag till it is activated again.
     onInterrupt = false;
 
-    // Move the PICC from Active state to Idle after processing is done.
+    // Move the PICC from Active state to Halt state after processing is done.
     m_rc522.PICC_HaltA();
 
     // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
     m_rc522.PCD_StopCrypto1();
+
+    // Handle a responsive delay before making more PICC selection.
+    timerDelay(Settings::AUTH_DELAY);
 
     // Reset the machine state to standy by indicating that the device is ready
     // to handle another PICC selected.
@@ -577,7 +582,7 @@ void Transmitter::handleDetectedCard()
 
         #ifdef IS_TRUST_ORG
         if (m_cardData.status == MFRC522::STATUS_OK)
-            m_cardData.status = setUidBasedKey(); // Upgrade Key if the card is new.
+            setUidBasedKey(); // Upgrade Key if the card is new.
         #endif
     }
 
@@ -588,9 +593,8 @@ void Transmitter::handleDetectedCard()
 // setUidBasedKey replaces the non-uid base key with a Uid based which is
 // quicker and safer to use. This is done on the cards detected as new.
 // NB: Feature only works in the Trust Organization Mode.
-MFRC522::StatusCode Transmitter::setUidBasedKey()
+void Transmitter::setUidBasedKey()
 {
-    MFRC522::StatusCode status = MFRC522::STATUS_OK;
     #ifdef IS_TRUST_ORG
     if (m_blockAuth.isCardNew)
     {
@@ -630,7 +634,7 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
         // Consecutive change of the same sector trailer will require KeyB as the
         // modified access bits block KeyA from every accessing the sector trailer block
         // anymore.
-        status = m_rc522.PCD_Authenticate(
+        m_cardData.status = m_rc522.PCD_Authenticate(
             MFRC522::PICC_CMD_MF_AUTH_KEY_A,    // authenticate with Key A
             sectorTrailer,                      // block number
             &m_blockAuth.authKeyA,              // Key B is same as Key A for a new tag.
@@ -638,19 +642,17 @@ MFRC522::StatusCode Transmitter::setUidBasedKey()
         );
 
         // On successful authentication attempt to write the sector trailer block.
-        if (status == MFRC522::STATUS_OK)
-            status = m_rc522.MIFARE_Write(
+        if (m_cardData.status == MFRC522::STATUS_OK)
+            m_cardData.status = m_rc522.MIFARE_Write(
                 sectorTrailer,
                 keyBuffer,
                 Settings::blockSize
             );
 
-        if (status == MFRC522::STATUS_OK)
+        if (m_cardData.status == MFRC522::STATUS_OK)
             setDetailsMsg((char*)"Upgrading key config was successful! ");
         else
             setDetailsMsg((char*)"Upgrading key config failed! ");
     }
     #endif
-
-    return status;
 }

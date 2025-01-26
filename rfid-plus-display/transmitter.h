@@ -237,9 +237,9 @@ class Transmitter: public Display
         // which of the hardcoded default KeyAs is currently supported by the tag.
         void attemptBlock2Auth(BlockAuth& auth, MFRC522::MIFARE_Key key);
 
-        // setUidBasedKey if the card uses non-uid based key for  authentication,
-        // it is replace with a Uid based which is quicker and safer to use.
-        MFRC522::StatusCode setUidBasedKey();
+        // setUidBasedKey if the card uses non-uid based key for authentication,
+        // it is replaced with a Uid based which is quicker and safer to use.
+        void setUidBasedKey();
 
         // readPICC reads the contents of a given Proximity Inductive Coupling Card (PICC/NFC Card)
         void readPICC();
@@ -279,10 +279,6 @@ class Transmitter: public Display
         // the an interrupt once detected.
         void activateTransmission()
         {
-            // Wait for the current interrupt to be handled before triggering another
-            // one.
-            if (onInterrupt) return;
-
             m_rc522.PCD_WriteRegister(MFRC522::FIFODataReg, MFRC522::PICC_CMD_REQA);
             m_rc522.PCD_WriteRegister(MFRC522::CommandReg, MFRC522::PCD_Transceive);
             m_rc522.PCD_WriteRegister(MFRC522::BitFramingReg, initDataTransmission);
