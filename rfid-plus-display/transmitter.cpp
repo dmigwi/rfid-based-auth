@@ -224,6 +224,7 @@ bool Transmitter::isNewCardDetected()
     bool isPresent {m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial()};
     if (isPresent)
         return true;
+    // else check again if the false positive error has been cleared.
     return m_rc522.PICC_IsNewCardPresent() && m_rc522.PICC_ReadCardSerial();
 }
 
@@ -549,12 +550,6 @@ void Transmitter::cleanUpAfterCardOps()
     // disable the interrupt flag till it is activated again.
     onInterrupt = false;
 
-    // Move the PICC from Active state to Halt state after processing is done.
-    m_rc522.PICC_HaltA();
-
-    // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
-    m_rc522.PCD_StopCrypto1();
-
     // Handle a responsive delay before making more PICC selection.
     timerDelay(Settings::AUTH_DELAY);
 
@@ -584,6 +579,17 @@ void Transmitter::handleDetectedCard()
         if (m_cardData.status == MFRC522::STATUS_OK)
             setUidBasedKey(); // Upgrade Key if the card is new.
         #endif
+
+        // Only tags in active status need to be halted. Otherwise the are already
+        // halted if previous operations failed.
+        if (m_cardData.status == MFRC522::STATUS_OK)
+        {
+            // Move the PICC from Active state to Halt state after processing is done.
+            m_rc522.PICC_HaltA();
+
+            // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
+            m_rc522.PCD_StopCrypto1();
+        }
     }
 
     // Handle clean up after the card operations.
