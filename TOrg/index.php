@@ -1,7 +1,7 @@
 <?php
 	require 'db.php';
 
-	// Unique trust organization id
+	// Current trust organization's unique id.
 	$trustOrgId = "123456ABCDEF12A1";
 
 	$bin_response = "";
@@ -23,13 +23,13 @@
             global $trustOrgId;
 
             $sql = "INSERT INTO `rollingPasswordTable` (hashed_blockdata, rolling_pass, secret_key_id) ".
-                        "VALUES('%s', '%s', '%d')";
+                        "VALUES('%s', '%s', %d)";
             $sql = sprintf($sql, $new_block2data, $new_trustkey, $secretKeyId);
             //echo $sql;
 
             if (mysqli_query($con, $sql)) {
                 // new Trust Key Will be:
-                return  hextobin($new_trustkey) . hextobin($trustOrgId) . hextobin($deviceUid);
+                return  hex2bin($new_trustkey) . hex2bin($trustOrgId) . hex2bin($deviceUid);
             }
         } catch (Exception $e) {
             //echo $e;
@@ -37,13 +37,13 @@
         return "";
     };
 
-	function findDevice($PCD_uid) {
+	function findDevice($deviceUid) {
         $deviceExists = false;
         try {
             global $con;
             global $inTrustOrgMode;
 
-            $query = "SELECT is_trust_org FROM `devicesTable` WHERE device_id='$PCD_uid'";
+            $query = "SELECT is_trust_org FROM `devicesTable` WHERE device_id='$deviceUid'";
             $result = mysqli_query($con, $query);
 
             $deviceExists = ($result && mysqli_num_rows($result) > 0);
@@ -63,7 +63,6 @@
         // Handle POST request.
 
         $bin_input = file_get_contents('php://input');
-        //$bin_input = hex2bin($bin_input); // For postman testing only.
         //echo "Raw data :" . bin2hex($bin_input). "\n";
 
         $PCD_uid = "";
@@ -109,7 +108,7 @@
                     }
 
                     $secret_key_id = mysqli_insert_id($con);
-                    $default_trustkey = sha256hash($default_trustkey_salt.$hashed_tag_uid)
+                    $default_trustkey = sha256hash($default_trustkey_salt.$hashed_tag_uid);
 
                     // Also insert default trust key entry.
                     insertTrustKey($default_block2data, $default_trustkey, $PCD_uid, $secret_key_id);
@@ -124,7 +123,6 @@
                             "ORDER BY created_on DESC LIMIT 1";
                     $query = sprintf($query, $hashed_block2data, $default_block2data);
                     $result = mysqli_query($con, $query);
-
                     //echo " Query: ".$query. " \n";
 
                     if (!$result || mysqli_num_rows($result) != 1){
@@ -146,7 +144,7 @@
                 $old_trustkey = bin2hex(substr($bin_input, 19, 32));
                 $old_block2data  = md5hash(bin2hex(substr($bin_input, 51, 16)));
                 $default_block2data = md5hash($default_block2data_salt.$hashed_tag_uid);
-                $default_trustkey = sha256hash($default_trustkey_salt.$hashed_tag_uid)
+                $default_trustkey = sha256hash($default_trustkey_salt.$hashed_tag_uid);
                 //echo " --block2data :".$old_block2data. "\n";
 
                 // picks only the most recent trust key insert for authentication.
@@ -166,7 +164,7 @@
                 mysqli_free_result($result);
 
                 if($secret_key_id != -1 || $inTrustOrgMode) {
-                    $new_block2data = md5hash($trustOrgId . $deviceUid);
+                    $new_block2data = md5hash($trustOrgId . $PCD_uid);
                     $new_trustkey = sha256hash(random_bytes(8) . $old_trustkey);
                     $bin_response = insertTrustKey($new_block2data, $new_trustkey, $PCD_uid, $secret_key_id);
                 }

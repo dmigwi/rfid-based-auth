@@ -341,31 +341,21 @@ void Transmitter::readPICC()
         return;
     }
 
-    const int sizeOfDeviceID {sizeof(Settings::DEVICE_ID)};
-    byte deviceIdBuff[sizeOfDeviceID];
-
-    #ifdef IS_TRUST_ORG
-    // Set the actual device ID only during the trust org mode.
-    // During the trust org mode, a new secret key is returned if none existed.
-    memcpy(deviceIdBuff, Settings::DEVICE_ID, sizeOfDeviceID);
-    #else
-    memset(deviceIdBuff, 0, sizeOfDeviceID);
-    #endif
-
     // This order of packaging should never be altered!
-    byte txData[Settings::SecretKeyAuthDataSize];
-    txData[0] = m_rc522.uid.size;                                     // copy card uid size
-    memcpy(txData+1, m_rc522.uid.uidByte, 10);                        // copy card uid.
-    memcpy(txData+11, deviceIdBuff, sizeOfDeviceID);                  // copy the current PCD ID
-    memcpy(txData+19, m_blockAuth.block2Data, Settings::blockSize);   // copy block 2 data
+    const int expectedBytesCount {Settings::SecretKeyAuthDataSize};
+    byte txData[expectedBytesCount];
+    txData[0] = m_rc522.uid.size;                                           // copy card uid size
+    memcpy(txData+1, m_rc522.uid.uidByte, 10);                              // copy card uid.
+    memcpy(txData+11, Settings::DEVICE_ID, sizeof(Settings::DEVICE_ID));    // copy the current PCD ID
+    memcpy(txData+19, m_blockAuth.block2Data, Settings::blockSize);         // copy block 2 data
 
     // Stage 3: Send the block 2 Contents to the trust organization for validation.
     // - Use Serial transmission to send the block 2 data to the WIFI module.
-    sendSerialData(txData, Settings::SecretKeyAuthDataSize);
+    sendSerialData(txData, expectedBytesCount);
 
     // Serial.println(F(" SecretKey Auth contents! "));
-    // Serial.println(Settings::SecretKeyAuthDataSize);
-    // dumpBytes(txData, Settings::SecretKeyAuthDataSize);
+    // Serial.println(expectedBytesCount);
+    // dumpBytes(txData, expectedBytesCount);
 
     // Request the secret key sent from the trust organization.
     byte secretKey[MFRC522::MF_KEY_SIZE] = {0, 0, 0, 0, 0, 0};
@@ -580,16 +570,11 @@ void Transmitter::handleDetectedCard()
             setUidBasedKey(); // Upgrade Key if the card is new.
         #endif
 
-        // Only tags in active status need to be halted. Otherwise the are already
-        // halted if previous operations failed.
-        if (m_cardData.status == MFRC522::STATUS_OK)
-        {
-            // Move the PICC from Active state to Halt state after processing is done.
-            m_rc522.PICC_HaltA();
+        // Move the PICC from Active state to Halt state after processing is done.
+        m_rc522.PICC_HaltA();
 
-            // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
-            m_rc522.PCD_StopCrypto1();
-        }
+        // Stop encryption on PCD allowing new communication to be initiated with other PICCs.
+        m_rc522.PCD_StopCrypto1();
     }
 
     // Handle clean up after the card operations.
