@@ -1,11 +1,11 @@
 <?php
 	require 'db.php';
 
-	// Current trust organization's unique id.
+	// Unique trust organization id
 	$trustOrgId = "123456ABCDEF12A1";
 
 	$bin_response = "";
-	$inTrustOrgMode = false;
+	$isTrustOrgMode = false;
     $default_block2data_salt = "thayu!🥸";
     $default_trustkey_salt = "The only thing we have to fear is fear itself!🫣";
 
@@ -37,19 +37,17 @@
         return "";
     };
 
-	function findDevice($deviceUid) {
+	function findDevice($PCD_uid) {
         $deviceExists = false;
         try {
             global $con;
-            global $inTrustOrgMode;
+            global $isTrustOrgMode;
 
-            $query = "SELECT is_trust_org FROM `devicesTable` WHERE device_id='$deviceUid'";
-            $result = mysqli_query($con, $query);
-
-            $deviceExists = ($result && mysqli_num_rows($result) > 0);
+            $query = "SELECT is_trust_org FROM `devicesTable` WHERE device_id='$PCD_uid'";
+            $deviceExists = ($result = mysqli_query($con, $query));
 
             if ($deviceExists) {
-                $inTrustOrgMode = (mysqli_fetch_row($result)[0] == 1);
+                $isTrustOrgMode = (mysqli_fetch_row($result)[0] == 1);
             }
 
             mysqli_free_result($result);
@@ -92,19 +90,19 @@
                 $query = "SELECT secret_key FROM `secretKeysTable` WHERE hashed_tag_uid='$hashed_tag_uid'";
                 $result = mysqli_query($con,$query);
 
-                if (mysqli_num_rows($result) > 0) {
-                    $bin_response = hex2bin(mysqli_fetch_row($result)[0]);
+                if ($row = mysqli_fetch_row($result)) {
+                    $bin_response = hex2bin($row[0]);
                 }
                 mysqli_free_result($result);
                 //echo " Secret Key: ".bin2hex($bin_response). " \n";
 
-                if (empty($bin_response) && $inTrustOrgMode) { // new card update by trust organization pcd.
+                if (empty($bin_response) && $isTrustOrgMode) { // new card update by trust organization pcd.
                     $secret_key = substr(md5hash(random_bytes(8).$hashed_tag_uid), 0, 12);
                     $query = "INSERT INTO `secretKeysTable` (hashed_tag_uid, secret_key) VALUES('%s', '%s')";
 
                     $query = sprintf($query, $hashed_tag_uid, $secret_key);
                     if (mysqli_query($con, $query)) {
-                            $bin_response = hex2bin($secret_key);
+                        $bin_response = hex2bin($secret_key);
                     }
 
                     $secret_key_id = mysqli_insert_id($con);
@@ -122,10 +120,9 @@
                     $query = "SELECT id FROM `rollingPasswordTable` WHERE hashed_blockdata IN ('%s', '%s') ".
                             "ORDER BY created_on DESC LIMIT 1";
                     $query = sprintf($query, $hashed_block2data, $default_block2data);
-                    $result = mysqli_query($con, $query);
                     //echo " Query: ".$query. " \n";
 
-                    if (!$result || mysqli_num_rows($result) != 1){
+                    if (!($result = mysqli_query($con, $query))){
                         $bin_response = ""; // Unexpected error occured
                     }
 
@@ -148,22 +145,23 @@
                 //echo " --block2data :".$old_block2data. "\n";
 
                 // picks only the most recent trust key insert for authentication.
-                $query = "SELECT t.s FROM (".
-                			"SELECT `secret_key_id` as s, `rolling_pass` as r  from `rollingPasswordTable` as m ".
-                        	"WHERE m.hashed_blockdata IN ('%s', '%s') ORDER BY m.created_on DESC LIMIT 1".
-                        ") as t WHERE t.r IN ('%s', '%s')";
-                $query = sprintf($query, $old_block2data, $default_block2data, $default_trustkey, $old_trustkey);
-                $result = mysqli_query($con, $query);
+                $query = "SELECT m.`secret_key_id` FROM `rollingPasswordTable`AS m ".
+                            "LEFT JOIN `secretKeysTable` AS k ON m.`secret_key_id` = k.`id` ".
+                            "WHERE k.`hashed_tag_uid` = '%s' AND ".
+                            "m.`hashed_blockdata` IN ('%s', '%s') AND ".
+                            "m.`rolling_pass` IN ('%s', '%s') ORDER BY m.created_on DESC LIMIT 1";
+                $query = sprintf($query, $hashed_tag_uid, $old_block2data, $default_block2data, $default_trustkey, $old_trustkey);
                 //echo $query . " \n";
+                $result = mysqli_query($con, $query);
 
                 $secret_key_id = -1;
-                if ($result && mysqli_num_rows($result) > 0) {
-                    $secret_key_id = mysqli_fetch_row($result)[0];
+                if ($row = mysqli_fetch_row($result)){
+                    $secret_key_id = $row[0];
                 }
 
                 mysqli_free_result($result);
 
-                if($secret_key_id != -1 || $inTrustOrgMode) {
+                if($secret_key_id != -1) {
                     $new_block2data = md5hash($trustOrgId . $PCD_uid);
                     $new_trustkey = sha256hash(random_bytes(8) . $old_trustkey);
                     $bin_response = insertTrustKey($new_block2data, $new_trustkey, $PCD_uid, $secret_key_id);
